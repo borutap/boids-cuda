@@ -16,6 +16,7 @@ using namespace std;
 // settings
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 600;
+const float speed_factor = 0.001f;
 
 // public
 GLuint instanceVBO;
@@ -25,9 +26,12 @@ glm::vec2 translations[100];
 GLuint rotationVBO;
 glm::mat4 trans_matrix[100];
 glm::mat4 applied_rotations[100];
+float cum_angle[100];
+glm::mat4 applied_move[100];
 
 void logic();
-void rotation_resources();
+void init_helper_arrs();
+void init_transform_resources();
 void render(SDL_Window* window, Shader* shader);
 
 Shader* init_resources()
@@ -95,20 +99,15 @@ Shader* init_resources()
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glVertexAttribDivisor(2, 1); // tell OpenGL this is an instanced vertex attribute.
-
-    rotation_resources();
+    
+    init_transform_resources();
 
     return shader;
 }
 
-void rotation_resources()
+void init_transform_resources()
 {
-    for (int i = 0; i < 100; i++)
-    {
-        trans_matrix[i] = glm::mat4(1.0f);
-        applied_rotations[i] = glm::mat4(1.0f);
-    }
-        
+    init_helper_arrs();
 
     glGenBuffers(1, &rotationVBO);
     glBindBuffer(GL_ARRAY_BUFFER, rotationVBO);
@@ -133,27 +132,65 @@ void rotation_resources()
     glBindVertexArray(0);
 }
 
+
+void init_helper_arrs()
+{
+    for (int i = 0; i < 100; i++)
+    {
+        trans_matrix[i] = glm::mat4(1.0f);
+        applied_rotations[i] = glm::mat4(1.0f);
+        applied_move[i] = glm::mat4(1.0f);
+    }
+}
+
 void logic_rotate_all()
 {
-    static int index = 0;
     // translations[index].x = 0;
     // translations[index].y = 0;
     // glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
     // //glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec2) * 100, &translations[0], GL_STATIC_DRAW);
     // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec2) * index, sizeof(glm::vec2), &translations[index]);
-    for (int index = 0; index < 100; index++) {
+    for (int index = 0; index < 100; index++)
+    {
+        float angle = (rand() % 360) / (rand() % 1000 + 200.0f);
+        float& sum_angle = cum_angle[index];
+        sum_angle += angle;
+        if (sum_angle > 360)
+        {
+            sum_angle = 360 - sum_angle;
+        }
+        float moveX = speed_factor * sinf(glm::radians(sum_angle));
+        float moveY = speed_factor * cosf(glm::radians(sum_angle));
+        glm::mat4 moveTranslation = glm::translate(applied_move[index], glm::vec3(moveX, moveY, 0.0));
+        // if (index == 0)
+        // { 
+        //     cout << "cum_angle[0] = " << sum_angle << endl;
+        //     cout << "angle = " << angle << endl;
+        //     cout << "moveX = " << moveX << endl;
+        //     cout << "moveY = " << moveY << endl;
+        // }
+        applied_move[index] = moveTranslation;
         glm::mat4& matrix = trans_matrix[index];
         glm::mat4 translation1 = glm::translate(glm::mat4(1.0f), glm::vec3(-translations[index].x, -translations[index].y, 0.0));
-        glm::mat4 rotation = glm::rotate(applied_rotations[index], glm::radians(rand() % 360 / (rand() % 1000 + 200.0f)), glm::vec3(0.0, 0.0, 1.0));
+        //applied_rotations2[index] = translation1;
+        glm::mat4 rotation = glm::rotate(applied_rotations[index], glm::radians(angle), glm::vec3(0.0, 0.0, 1.0));
         applied_rotations[index] = rotation;
         glm::mat4 translation2 = glm::translate(glm::mat4(1.0f), glm::vec3(translations[index].x, translations[index].y, 0.0));
-        matrix = translation2 * rotation * translation1;
+        //applied_rotations2[index] = translation2;
+        
+        matrix = translation2 * rotation * moveTranslation * translation1;
+        // translations[index].x += moveX;
+        // translations[index].y += moveY;
+        // glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+        // glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec2) * 100, &translations[0], GL_STATIC_DRAW);
+        // glBindBuffer(GL_ARRAY_BUFFER, 0);
     // bez translacji obracaly sie wokol srodka
     // glBindBuffer(GL_ARRAY_BUFFER, rotationVBO);
     // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::mat4) * index, sizeof(glm::mat4), &matrix);
     }
     glBindBuffer(GL_ARRAY_BUFFER, rotationVBO);
     glBufferData(GL_ARRAY_BUFFER, 100 * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
     // cout << index << " ";
     // index++;
     // cout << SDL_GetTicks() << endl;
@@ -162,6 +199,11 @@ void logic_rotate_all()
     //     index = 0;
     // }
 }
+
+// void logic_move_axis_all()
+// {
+
+// }
 
 void logic_rotate()
 {
@@ -193,7 +235,12 @@ void main_loop(SDL_Window* window, Shader* shader)
             if (ev.type == SDL_KEYDOWN &&
                 ev.key.keysym.sym == SDLK_r)
             {
-                //logic_rotate();
+                //logic_rotate_all();
+            }
+            if (ev.type == SDL_WINDOWEVENT &&
+                ev.window.event == SDL_WINDOWEVENT_RESIZED)
+            {
+                glViewport(0, 0, ev.window.data1, ev.window.data2);
             }
 		}
         logic_rotate_all();
