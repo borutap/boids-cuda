@@ -23,7 +23,8 @@ GLuint quadVAO, quadVBO;
 glm::vec2 translations[100];
 
 GLuint rotationVBO;
-glm::mat4 rot_matrix[100];
+glm::mat4 trans_matrix[100];
+glm::mat4 applied_rotations[100];
 
 void logic();
 void rotation_resources();
@@ -103,11 +104,15 @@ Shader* init_resources()
 void rotation_resources()
 {
     for (int i = 0; i < 100; i++)
-        rot_matrix[i] = glm::mat4(1.0f);
+    {
+        trans_matrix[i] = glm::mat4(1.0f);
+        applied_rotations[i] = glm::mat4(1.0f);
+    }
+        
 
     glGenBuffers(1, &rotationVBO);
     glBindBuffer(GL_ARRAY_BUFFER, rotationVBO);
-    glBufferData(GL_ARRAY_BUFFER, 100 * sizeof(glm::mat4), &rot_matrix[0], GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 100 * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
     
     glBindVertexArray(quadVAO);
     // set attribute pointers for matrix (4 times vec4)
@@ -128,7 +133,7 @@ void rotation_resources()
     glBindVertexArray(0);
 }
 
-void logic_rotate()
+void logic_rotate_all()
 {
     static int index = 0;
     // translations[index].x = 0;
@@ -136,15 +141,46 @@ void logic_rotate()
     // glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
     // //glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec2) * 100, &translations[0], GL_STATIC_DRAW);
     // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec2) * index, sizeof(glm::vec2), &translations[index]);
-    glm::mat4& matrix = rot_matrix[index];
-    //matrix = glm::rotate(matrix, glm::radians(90.0f), glm::vec3(0.0, 0.0, 1.0));
-    matrix = glm::translate(matrix, glm::vec3(0.3, 0.3, 0.0));
+    for (int index = 0; index < 100; index++) {
+        glm::mat4& matrix = trans_matrix[index];
+        glm::mat4 translation1 = glm::translate(glm::mat4(1.0f), glm::vec3(-translations[index].x, -translations[index].y, 0.0));
+        glm::mat4 rotation = glm::rotate(applied_rotations[index], glm::radians(rand() % 360 / (rand() % 1000 + 200.0f)), glm::vec3(0.0, 0.0, 1.0));
+        applied_rotations[index] = rotation;
+        glm::mat4 translation2 = glm::translate(glm::mat4(1.0f), glm::vec3(translations[index].x, translations[index].y, 0.0));
+        matrix = translation2 * rotation * translation1;
+    // bez translacji obracaly sie wokol srodka
+    // glBindBuffer(GL_ARRAY_BUFFER, rotationVBO);
+    // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::mat4) * index, sizeof(glm::mat4), &matrix);
+    }
+    glBindBuffer(GL_ARRAY_BUFFER, rotationVBO);
+    glBufferData(GL_ARRAY_BUFFER, 100 * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
+    // cout << index << " ";
+    // index++;
+    // cout << SDL_GetTicks() << endl;
+    // if (index == 100)
+    // {
+    //     index = 0;
+    // }
+}
+
+void logic_rotate()
+{
+    static int index = 0;
+    glm::mat4& matrix = trans_matrix[index];
+    glm::mat4 translation1 = glm::translate(glm::mat4(1.0f), glm::vec3(-translations[index].x, -translations[index].y, 0.0));
+    glm::mat4 rotation = glm::rotate(applied_rotations[index], glm::radians(1.0f), glm::vec3(0.0, 0.0, 1.0));
+    applied_rotations[index] = rotation;
+    glm::mat4 translation2 = glm::translate(glm::mat4(1.0f), glm::vec3(translations[index].x, translations[index].y, 0.0));
+    matrix = translation2 * rotation * translation1;
+    //bez translacji obracaly sie wokol srodka
     glBindBuffer(GL_ARRAY_BUFFER, rotationVBO);
     glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::mat4) * index, sizeof(glm::mat4), &matrix);
-    cout << index << endl;
+
     index++;
     if (index == 100)
+    {
         index = 0;
+    }
 }
 
 void main_loop(SDL_Window* window, Shader* shader)
@@ -157,9 +193,10 @@ void main_loop(SDL_Window* window, Shader* shader)
             if (ev.type == SDL_KEYDOWN &&
                 ev.key.keysym.sym == SDLK_r)
             {
-                logic_rotate();
+                //logic_rotate();
             }
 		}
+        logic_rotate_all();
         //logic();
 		render(window, shader);
 	}
