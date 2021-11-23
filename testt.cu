@@ -6,6 +6,7 @@
 
 #include "learnopengl/shader.h"
 
+// #define GLM_FORCE_CUDA
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -14,14 +15,14 @@
 using namespace std;
 
 // settings
-const unsigned int SCR_WIDTH = 800;
-const unsigned int SCR_HEIGHT = 600;
+const unsigned int SCR_WIDTH = 1200;
+const unsigned int SCR_HEIGHT = 900;
 const float speed_factor = 0.001f;
 
 // public
 GLuint instanceVBO;
 GLuint quadVAO, quadVBO;
-const int N = 100; // 100 lub 10000
+const int N = 10000; // 100 lub 10000
 glm::vec2 translations[N];
 
 GLuint translationVBO;
@@ -49,15 +50,14 @@ Shader* init_resources()
     // ---------------------------------------------------------
     //glm::vec2 translations[100];
     int index = 0;
-    float offset = 0.1f;
-    // tu zmienic przy zmianie N na 10000
-    for (int y = -10; y < 10; y += 2)
+    float offset = 0.01f;
+    for (int y = -100; y < 100; y += 2)
     {
-        for (int x = -10; x < 10; x += 2)
+        for (int x = -100; x < 100; x += 2)
         {
             glm::vec2 translation;
-            translation.x = (float)x / 10.0f + offset;
-            translation.y = (float)y / 10.0f + offset;
+            translation.x = (float)x / 100.0f + offset;
+            translation.y = (float)y / 100.0f + offset;
             translations[index++] = translation;
         }
     }
@@ -145,9 +145,40 @@ void init_helper_arrs()
     }
 }
 
+__global__ void kernel_logic(float *cum_angle,
+    glm::mat4 *trans_matrix, glm::mat4 *applied_rotations,
+    glm::mat4 *applied_move, glm::vec2 *translations)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index >= 10000)
+        return;
+
+    // float angle = (rand() % 360) / (rand() % 1000 + 200.0f);
+    float angle = 0.07;
+    float& sum_angle = cum_angle[index];
+    sum_angle += angle;
+    if (sum_angle > 360)
+    {
+        sum_angle = 360 - sum_angle;
+    }
+    float moveX = speed_factor * sinf(glm::radians(sum_angle));
+    float moveY = speed_factor * cosf(glm::radians(sum_angle));
+    glm::mat4 moveTranslation = glm::translate(applied_move[index], glm::vec3(moveX, moveY, 0.0));
+    
+    applied_move[index] = moveTranslation;
+    glm::mat4& matrix = trans_matrix[index];
+
+    glm::mat4 translation1 = glm::translate(glm::mat4(1.0f), glm::vec3(-translations[index].x, -translations[index].y, 0.0));
+    glm::mat4 rotation = glm::rotate(applied_rotations[index], glm::radians(angle), glm::vec3(0.0, 0.0, 1.0));
+    applied_rotations[index] = rotation;
+    glm::mat4 translation2 = glm::translate(glm::mat4(1.0f), glm::vec3(translations[index].x, translations[index].y, 0.0));
+    
+    matrix = translation2 * rotation * moveTranslation * translation1;    
+}
+
 void logic_rotate_all()
 {    
-    for (int index = 0; index < N; index++)
+    for (int index = 0; index < 100; index++)
     {
         float angle = (rand() % 360) / (rand() % 1000 + 200.0f);
         float& sum_angle = cum_angle[index];
@@ -171,7 +202,7 @@ void logic_rotate_all()
         matrix = translation2 * rotation * moveTranslation * translation1;    
     }
     glBindBuffer(GL_ARRAY_BUFFER, translationVBO);
-    glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 100 * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
     // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::mat4) * index, sizeof(glm::mat4), &matrix);
     glBindBuffer(GL_ARRAY_BUFFER, 0); 
 }
@@ -198,6 +229,25 @@ void logic_rotate()
 
 void main_loop(SDL_Window* window, Shader* shader)
 {    
+    glm::mat4 *d_trans_matrix;
+    glm::mat4 *d_applied_rotations;
+    float *d_cum_angle;
+    glm::mat4 *d_applied_move;
+    glm::vec2 *d_translations;
+
+    cudaMalloc(&d_trans_matrix, N * sizeof(glm::mat4));
+    cudaMalloc(&d_applied_rotations, N * sizeof(glm::mat4));
+    cudaMalloc(&d_cum_angle, N * sizeof(float));
+    cudaMalloc(&d_applied_move, N * sizeof(glm::mat4));    
+    cudaMalloc(&d_translations, N * sizeof(glm::vec2));    
+
+    cudaMemcpy(d_trans_matrix, trans_matrix, N * sizeof(glm::mat4), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_applied_rotations, applied_rotations, N * sizeof(glm::mat4), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_cum_angle, cum_angle, N * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_applied_move, applied_move, N * sizeof(glm::mat4), cudaMemcpyHostToDevice);    
+    cudaMemcpy(d_translations, translations, N * sizeof(glm::vec2), cudaMemcpyHostToDevice);    
+    dim3 num_threads(1024);
+    dim3 num_blocks(N / 1024 + 1);
     while (true) {
         Uint32 frame_start = SDL_GetTicks();
         int frame_time;
@@ -216,8 +266,19 @@ void main_loop(SDL_Window* window, Shader* shader)
                 glViewport(0, 0, ev.window.data1, ev.window.data2);
             }
 		}
-        logic_rotate_all();
+        kernel_logic<<<num_blocks, num_threads>>>(d_cum_angle, d_trans_matrix,
+                                                  d_applied_rotations, d_applied_move,
+                                                  d_translations);
+        // logic_rotate_all();
         //logic();
+        cudaMemcpy(trans_matrix, d_trans_matrix, N * sizeof(glm::mat4), cudaMemcpyDeviceToHost);
+        // cudaMemcpy(applied_rotations, d_applied_rotations, N * sizeof(glm::mat4), cudaMemcpyDeviceToHost);
+        // cudaMemcpy(cum_angle, d_cum_angle, N * sizeof(float), cudaMemcpyDeviceToHost);
+        // cudaMemcpy(applied_move, d_applied_move, N * sizeof(glm::mat4), cudaMemcpyDeviceToHost);    
+        glBindBuffer(GL_ARRAY_BUFFER, translationVBO);
+        glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
+        // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::mat4) * index, sizeof(glm::mat4), &matrix);
+        glBindBuffer(GL_ARRAY_BUFFER, 0); 
 		render(window, shader);
         frame_time = SDL_GetTicks() - frame_start;
         cout << frame_time << endl;
@@ -297,7 +358,7 @@ int main()
 	//SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
 	//SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 	SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 1);
-    // SDL_GL_SetSwapInterval(1); // wylacza vsync
+    // SDL_GL_SetSwapInterval(0); // wylacza vsync
 	if (SDL_GL_CreateContext(window) == NULL) {
 		cerr << "Error: SDL_GL_CreateContext: " << SDL_GetError() << endl;
 		return EXIT_FAILURE;
