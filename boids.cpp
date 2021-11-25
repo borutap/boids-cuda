@@ -11,12 +11,18 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <iostream>
+
+#include "boidUtils.h"
+#include <vector>
+#include <chrono>
+#include <thread>
+
 using namespace std;
 
 // settings
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 600;
-const float speed_factor = 0.001f;
+float speed_factor = 0.001f;
 
 // public
 GLuint instanceVBO;
@@ -29,6 +35,15 @@ glm::mat4 trans_matrix[N];
 glm::mat4 applied_rotations[N];
 float cum_angle[N];
 glm::mat4 applied_move[N];
+
+// set up vertex data (and buffer(s)) and configure vertex attributes
+// ------------------------------------------------------------------
+float quadVertices[] = {
+    // positions     // colors
+    -0.05f, -0.05f,  0.0f, 0.0f, 0.0f,
+    0.0f,    0.08f,  1.0f, 1.0f, 0.0f,
+    0.05f,  -0.05f,  0.0f, 0.0f, 0.0f
+};
 
 void logic();
 void init_helper_arrs();
@@ -67,16 +82,7 @@ Shader* init_resources()
     glGenBuffers(1, &instanceVBO);
     glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec2) * N, &translations[0], GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    // set up vertex data (and buffer(s)) and configure vertex attributes
-    // ------------------------------------------------------------------
-    float quadVertices[] = {
-        // positions     // colors
-        -0.05f, -0.05f,  0.0f, 0.0f, 0.0f,
-        0.0f,    0.08f,  1.0f, 1.0f, 0.0f,
-        0.05f,  -0.05f,  0.0f, 0.0f, 0.0f
-    };
+    glBindBuffer(GL_ARRAY_BUFFER, 0);    
     
     glGenVertexArrays(1, &quadVAO);
     glGenBuffers(1, &quadVBO);
@@ -147,8 +153,13 @@ void init_helper_arrs()
 
 void logic_rotate_all()
 {    
+    // do debugowania
+    // float act_speed = speed_factor;
+    // bool requestChange = false;
+    // if (requestChange)
+    //     speed_factor = act_speed;
     for (int index = 0; index < N; index++)
-    {
+    {        
         float angle = (rand() % 360) / (rand() % 1000 + 200.0f);
         float& sum_angle = cum_angle[index];
         sum_angle += angle;
@@ -158,17 +169,20 @@ void logic_rotate_all()
         }
         float moveX = speed_factor * sinf(glm::radians(sum_angle));
         float moveY = speed_factor * cosf(glm::radians(sum_angle));
-        glm::mat4 moveTranslation = glm::translate(applied_move[index], glm::vec3(moveX, moveY, 0.0));
-        
-        applied_move[index] = moveTranslation;
-        glm::mat4& matrix = trans_matrix[index];
 
+        glm::mat4& move_translation = applied_move[index];
+        glm::mat4& rotation = applied_rotations[index];
+        glm::mat4& matrix = trans_matrix[index];
+        // na poczatek
         glm::mat4 translation1 = glm::translate(glm::mat4(1.0f), glm::vec3(-translations[index].x, -translations[index].y, 0.0));
-        glm::mat4 rotation = glm::rotate(applied_rotations[index], glm::radians(angle), glm::vec3(0.0, 0.0, 1.0));
-        applied_rotations[index] = rotation;
+        // przeniesienie tam gdzie wskazuje rotacja
+        move_translation = glm::translate(move_translation, glm::vec3(moveX, moveY, 0.0));
+        // rotacja
+        rotation = glm::rotate(rotation, glm::radians(angle), glm::vec3(0.0, 0.0, 1.0));
+        // powrot na miejsce
         glm::mat4 translation2 = glm::translate(glm::mat4(1.0f), glm::vec3(translations[index].x, translations[index].y, 0.0));
         
-        matrix = translation2 * rotation * moveTranslation * translation1;    
+        matrix = translation2 * rotation * move_translation * translation1;    
     }
     glBindBuffer(GL_ARRAY_BUFFER, translationVBO);
     glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
@@ -197,7 +211,14 @@ void logic_rotate()
 }
 
 void main_loop(SDL_Window* window, Shader* shader)
-{    
+{
+    for (int i = 0; i < N; i++)
+    {
+        auto pos = get_initial_boid_position(quadVertices, translations[i]);
+        cout << i << ": " << pos.x << ", " << pos.y << endl;
+    }
+    std::vector<boid> boids(N);
+    init_boids(boids, quadVertices, translations, N);
     while (true) {
         Uint32 frame_start = SDL_GetTicks();
         int frame_time;
@@ -216,11 +237,42 @@ void main_loop(SDL_Window* window, Shader* shader)
                 glViewport(0, 0, ev.window.data1, ev.window.data2);
             }
 		}
-        logic_rotate_all();
+        // logic_rotate_all();
         //logic();
-		render(window, shader);
+        // move_boid(trans_matrix[0], translations[0], 0.0f, 0.0f);        
+        on_update(boids, N, quadVertices, translations);
+        for (int i = 0; i < N; i++)
+        {
+            boids[i].pos += boids[i].speed;
+            if (boids[i].pos.x > 1.0f)
+                boids[i].pos.x = -1.0f;
+            if (boids[i].pos.y > 1.0f)
+                boids[i].pos.y = -1.0f;
+            if (boids[i].pos.x < -1.0f)
+                boids[i].pos.x = 1.0f;
+            if (boids[i].pos.y < -1.0f)
+                boids[i].pos.y = 1.0f;
+            transform_boid(trans_matrix[i], applied_move[i],
+                           applied_rotations[i], translations[i], boids[i].speed,
+                           boids[i].pos);
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, translationVBO);
+        glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
+        // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::mat4) * index, sizeof(glm::mat4), &matrix);
+        glBindBuffer(GL_ARRAY_BUFFER, 0); 
+        render(window, shader);
+		//render(window, shader);
         frame_time = SDL_GetTicks() - frame_start;
-        cout << frame_time << endl;
+        for (int i = 0; i < N; i++)
+        {
+            auto& pos = boids[i].pos;
+            cout << i << ": " << pos.x << ", " << pos.y << endl;
+        }
+        
+        std::chrono::milliseconds timespan(3000); // or whatever
+
+        std::this_thread::sleep_for(timespan);
+        // cout << frame_time << endl;
 	}
 }
 
@@ -297,7 +349,7 @@ int main()
 	//SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
 	//SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 	SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 1);
-    // SDL_GL_SetSwapInterval(1); // wylacza vsync
+    // SDL_GL_SetSwapInterval(0); // wylacza vsync
 	if (SDL_GL_CreateContext(window) == NULL) {
 		cerr << "Error: SDL_GL_CreateContext: " << SDL_GetError() << endl;
 		return EXIT_FAILURE;
