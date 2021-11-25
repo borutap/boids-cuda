@@ -20,6 +20,8 @@
 using namespace std;
 
 // settings
+// const unsigned int SCR_WIDTH = 1200;
+// const unsigned int SCR_HEIGHT = 900;
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 600;
 float speed_factor = 0.001f;
@@ -66,16 +68,26 @@ Shader* init_resources()
     int index = 0;
     float offset = 0.1f;
     // tu zmienic przy zmianie N na 10000
-    for (int y = -10; y < 10; y += 2)
+    srand(time(NULL));
+    for (int i = 0; i < N; i++)
     {
-        for (int x = -10; x < 10; x += 2)
-        {
-            glm::vec2 translation;
-            translation.x = (float)x / 10.0f + offset;
-            translation.y = (float)y / 10.0f + offset;
-            translations[index++] = translation;
-        }
+        float random = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        glm::vec2 translation;
+        translation.x = random * 2 - 1;
+        random = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        translation.y = random * 2 - 1;
+        translations[index++] = translation;
     }
+    // for (int y = -10; y < 10; y += 2)
+    // {
+    //     for (int x = -10; x < 10; x += 2)
+    //     {
+    //         glm::vec2 translation;
+    //         translation.x = (float)x / 10.0f + offset;
+    //         translation.y = (float)y / 10.0f + offset;
+    //         translations[index++] = translation;
+    //     }
+    // }
 
     // store instance data in an array buffer
     // --------------------------------------
@@ -218,7 +230,12 @@ void main_loop(SDL_Window* window, Shader* shader)
         cout << i << ": " << pos.x << ", " << pos.y << endl;
     }
     std::vector<boid> boids(N);
-    init_boids(boids, quadVertices, translations, N);
+    init_boids(boids, quadVertices, translations, N,
+               SCR_WIDTH, SCR_HEIGHT);
+    for (int i = 0; i < N; i++)
+    {
+        cout << i << ": " << boids[i].pos_x << ", " << boids[i].pos_y << endl;
+    }
     while (true) {
         Uint32 frame_start = SDL_GetTicks();
         int frame_time;
@@ -230,6 +247,29 @@ void main_loop(SDL_Window* window, Shader* shader)
                 ev.key.keysym.sym == SDLK_r)
             {
                 //logic_rotate_all();
+                myMain(boids, N);
+                for (int i = 0; i < N; i++)
+                {
+                    boids[i].pos_x += boids[i].speed_x;
+                    boids[i].pos_y += boids[i].speed_y;
+                    if (boids[i].pos_x > SCR_WIDTH) boids[i].pos_x -= SCR_WIDTH;
+                    else if (boids[i].pos_x < 0) boids[i].pos_x += SCR_WIDTH;
+                    if (boids[i].pos_y > SCR_HEIGHT) boids[i].pos_y -= SCR_HEIGHT;
+                    else if (boids[i].pos_y < 0) boids[i].pos_y += SCR_HEIGHT;
+                    convertToSmall(boids[i], SCR_WIDTH, SCR_HEIGHT);
+                    // if (boids[i].pos_x > 1.0f)
+                    //     boids[i].pos_x = -1.0f;
+                    // else if (boids[i].pos_x < -1.0f)
+                    //     boids[i].pos_x = 1.0f;
+                    // if (boids[i].pos_y > 1.0f)
+                    //     boids[i].pos_y = -1.0f;            
+                    // else if (boids[i].pos_y < -1.0f)
+                    //     boids[i].pos_y = 1.0f;
+                    transform_boid(trans_matrix[i], applied_move[i],
+                                applied_rotations[i], translations[i], boids[i]
+                                );
+                    convertToBig(boids[i], SCR_WIDTH, SCR_HEIGHT);
+                }
             }
             if (ev.type == SDL_WINDOWEVENT &&
                 ev.window.event == SDL_WINDOWEVENT_RESIZED)
@@ -240,22 +280,29 @@ void main_loop(SDL_Window* window, Shader* shader)
         // logic_rotate_all();
         //logic();
         // move_boid(trans_matrix[0], translations[0], 0.0f, 0.0f);        
-        on_update(boids, N, quadVertices, translations);
-        for (int i = 0; i < N; i++)
-        {
-            boids[i].pos += boids[i].speed;
-            if (boids[i].pos.x > 1.0f)
-                boids[i].pos.x = -1.0f;
-            if (boids[i].pos.y > 1.0f)
-                boids[i].pos.y = -1.0f;
-            if (boids[i].pos.x < -1.0f)
-                boids[i].pos.x = 1.0f;
-            if (boids[i].pos.y < -1.0f)
-                boids[i].pos.y = 1.0f;
-            transform_boid(trans_matrix[i], applied_move[i],
-                           applied_rotations[i], translations[i], boids[i].speed,
-                           boids[i].pos);
-        }
+        //myMain(boids, N);
+        // for (int i = 0; i < N; i++)
+        // {
+        //     boids[i].pos_x += boids[i].speed_x;
+        //     boids[i].pos_y += boids[i].speed_y;
+        //     if (boids[i].pos_x > SCR_WIDTH) boids[i].pos_x -= SCR_WIDTH;
+        //     else if (boids[i].pos_x < 0) boids[i].pos_x += SCR_WIDTH;
+        //     if (boids[i].pos_y > SCR_HEIGHT) boids[i].pos_y -= SCR_HEIGHT;
+        //     else if (boids[i].pos_y < 0) boids[i].pos_y += SCR_HEIGHT;
+        //     convertToSmall(boids[i], SCR_WIDTH, SCR_HEIGHT);
+        //     // if (boids[i].pos_x > 1.0f)
+        //     //     boids[i].pos_x = -1.0f;
+        //     // else if (boids[i].pos_x < -1.0f)
+        //     //     boids[i].pos_x = 1.0f;
+        //     // if (boids[i].pos_y > 1.0f)
+        //     //     boids[i].pos_y = -1.0f;            
+        //     // else if (boids[i].pos_y < -1.0f)
+        //     //     boids[i].pos_y = 1.0f;
+        //     transform_boid(trans_matrix[i], applied_move[i],
+        //                    applied_rotations[i], translations[i], boids[i]
+        //                    );
+        //     convertToBig(boids[i], SCR_WIDTH, SCR_HEIGHT);
+        // }
         glBindBuffer(GL_ARRAY_BUFFER, translationVBO);
         glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
         // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::mat4) * index, sizeof(glm::mat4), &matrix);
@@ -263,16 +310,15 @@ void main_loop(SDL_Window* window, Shader* shader)
         render(window, shader);
 		//render(window, shader);
         frame_time = SDL_GetTicks() - frame_start;
-        for (int i = 0; i < N; i++)
-        {
-            auto& pos = boids[i].pos;
-            cout << i << ": " << pos.x << ", " << pos.y << endl;
-        }
+        // for (int i = 0; i < N; i++)
+        // {
+        //     cout << i << ": " << boids[i].pos_x << ", " << boids[i].pos_y << endl;
+        // }
         
-        std::chrono::milliseconds timespan(3000); // or whatever
+        std::chrono::milliseconds timespan(20); // or whatever
 
         std::this_thread::sleep_for(timespan);
-        // cout << frame_time << endl;
+        cout << frame_time << endl;
 	}
 }
 
