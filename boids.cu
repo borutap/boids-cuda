@@ -30,7 +30,7 @@ float speed_factor = 0.001f;
 // public
 GLuint instanceVBO;
 GLuint quadVAO, quadVBO;
-const int N = 8000; // 100 lub 10000
+const int N = 5000; // 100 lub 10000
 glm::vec2 *translations;
 
 GLuint translationVBO;
@@ -71,7 +71,7 @@ Shader* init_resources()
     Shader* shader = new Shader("boids.vs", "boids.fs");
     trans_matrix = new glm::mat4[N];
     translations = new glm::vec2[N];
-    // tu zmienic przy zmianie N na 10000    
+       
     srand(time(NULL));
     for (int i = 0; i < N; i++)
     {                
@@ -81,17 +81,7 @@ Shader* init_resources()
         trans_matrix[i] = glm::translate(glm::mat4(1.0f), translation);
         translations[i] = translation;
     }
-    // for (int y = -10; y < 10; y += 2)
-    // {
-    //     for (int x = -10; x < 10; x += 2)
-    //     {
-    //         glm::vec2 translation;
-    //         translation.x = (float)x / 10.0f + offset;
-    //         translation.y = (float)y / 10.0f + offset;
-    //         translations[index++] = translation;
-    //     }
-    // }
-
+    
     glGenVertexArrays(1, &quadVAO);
     glGenBuffers(1, &quadVBO);
     glBindVertexArray(quadVAO);
@@ -120,6 +110,9 @@ void init_transform_resources()
     glGenBuffers(1, &translationVBO);
     glBindBuffer(GL_ARRAY_BUFFER, translationVBO);
     glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
+
+    // rejestracja jako zasob cuda
+    // CudaGraphicsGLRegisterBuffer()
     
     glBindVertexArray(quadVAO);
     // set attribute pointers for matrix (4 times vec4)
@@ -152,59 +145,6 @@ void print_debug(bboid &boid)
     return;
 }
 
-// void boid_logic(std::vector<bboid> &boids)
-// {
-//     for (int i = 0; i < N; i++)
-//     {
-//         bboid &boid = boids[i];
-//         fly_towards_center(boid, boids);
-//         avoid_others(boid, boids, i);
-//         match_velocity(boid, boids, i);
-//         limit_speed(boid);
-//         keep_within_bounds(boid, boids);
-//         boid.x += boid.dx;
-//         boid.y += boid.dy;
-//         // float angle = boid.dy / boid.dx;
-//         auto pi = glm::pi<float>();
-//         float angle = glm::atan(boid.dy / boid.dx);        
-//         // cout << "anglePrev = " << angle/pi*180 << endl;
-//         //float angle = glm::linearRand(-pi, pi);
-//         if (boid.dx <= 0)
-//         {
-//             angle += pi / 2;
-//         }        
-//         else
-//         {
-//             angle -= pi / 2;
-//         }
-//         // float angle = -pi / 4;
-//         // if (i == 0)
-//         // {
-//         //     print_debug(boid);
-//         //     cout << "dy / dx = " << boid.dy/boid.dx << endl;
-//         //     cout << "angle = " << angle/pi*180 << endl;            
-//         // }
-//         move_logic(boid, trans_matrix[i], angle);        
-//         // if (angle > pi / 2 || angle < -pi / 2)
-//         // {
-//         //     cout << angle << endl;
-//         //     angle = 0;
-//         // }
-//         // else
-//         // {
-//         //     angle = glm::atan(boid.dy, boid.dx);
-//         //     move_logic(boid, trans_matrix[i], angle);
-//         // }        
-//         // float angle = glm::atan2(boid.dy, boid.dx);
-//         // move_boid(boid, trans_matrix[i], boid.x, boid.y);
-//         // rotate_boid_and_return(boid, trans_matrix[i], angle);
-//     }
-//     glBindBuffer(GL_ARRAY_BUFFER, translationVBO);
-//     glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
-//     // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::mat4) * index, sizeof(glm::mat4), &matrix);
-//     glBindBuffer(GL_ARRAY_BUFFER, 0); 
-// }
-
 void set_initial_boid_position(bboid &boid, float *quadVertices, glm::vec2 &translation)
 {
     float origin_x = 0.0f;
@@ -235,7 +175,7 @@ __device__ float distance(bboid &boid1, bboid &boid2)
 __device__ void fly_towards_center(bboid *boids, int index, int n)
 {    
     bboid &boid = boids[index];
-    const float centering_factor = 0.005f; // adjust velocity by this %
+    const float centering_factor = 0.002f; // adjust velocity by this %
     const float visual_range = 0.07f;
 
     float centerX = 0.0f;
@@ -297,7 +237,7 @@ __device__ void limit_speed(bboid *boids, int index)
 __device__ void avoid_others(bboid *boids, int index, int n)
 {
     bboid &boid = boids[index];
-    const float min_distance = 0.01f; // The distance to stay away from other boids
+    const float min_distance = 0.014f; // The distance to stay away from other boids
     const float avoid_factor = 0.05f; // Adjust velocity by this %
     float moveX = 0;
     float moveY = 0;
@@ -323,8 +263,8 @@ __device__ void match_velocity(bboid *boids, int index, int n)
     const float matching_factor = 0.05f;
     const float visual_range = 0.07f; // TODO - to do glob. zmiennej
 
-    float avgDX = 0.0f;
-    float avgDY = 0.0f;
+    float avgDX = boid.dx;
+    float avgDY = boid.dy;
     int num_neighbors = 0;
 
     for (unsigned int i = 0; i < n; i++)
@@ -339,7 +279,9 @@ __device__ void match_velocity(bboid *boids, int index, int n)
             num_neighbors += 1;
         }
     }
-
+    // zeby zmiana dx, dy nizej nie zaburzyla
+    // sredniej liczonej w innym watku wyzej
+    __syncthreads();    
     if (num_neighbors)
     {
         avgDX = avgDX / num_neighbors;
@@ -354,17 +296,27 @@ __global__ void kernel_test(bboid *boids, glm::mat4 *trans, int n)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= n)
+    {
+        // printf("%d\n", index);
         return;
+    }
+        
     fly_towards_center(boids, index, n);
     avoid_others(boids, index, n);
+    // zeby zmiana predkosci (dx, dy) w avoid_others 
+    // nie zaburzyla sredniej liczonej
+    //  w innym watku w match_velocity
+    __syncthreads();
     match_velocity(boids, index, n);
     limit_speed(boids, index);
     keep_within_bounds(boids, index);
-    boids[index].x += boids[index].dx;
-    boids[index].y += boids[index].dy;
-    float angle = glm::atan(boids[index].dy / boids[index].dx);
+    // __syncthreads(); // wczesniej nie zmieniamy x, y
+    bboid &boid = boids[index];
+    boid.x += boid.dx;
+    boid.y += boid.dy;
+    float angle = glm::atan(boid.dy / boid.dx);
     float pi = glm::pi<float>();
-    if (boids[index].dx <= 0)
+    if (boid.dx <= 0)
     {
         angle += pi / 2;
     }        
@@ -373,7 +325,7 @@ __global__ void kernel_test(bboid *boids, glm::mat4 *trans, int n)
         angle -= pi / 2;
     }
     auto rotation = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0.0f, 0.0f, 1.0f));
-    auto move2 = glm::translate(glm::mat4(1.0f), glm::vec3(boids[index].x, boids[index].y, 0.0f));
+    auto move2 = glm::translate(glm::mat4(1.0f), glm::vec3(boid.x, boid.y, 0.0f));
     trans[index] = move2 * rotation;
     // printf("boids[%d].x = %f\n", index, boid.x);
     // cout << "boid.x = " << boid.x << endl;
