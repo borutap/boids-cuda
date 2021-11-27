@@ -13,51 +13,47 @@
 
 #include <iostream>
 
-//#include "finalBoidUtilsKernel.h"
-#include <vector>
 #include <chrono>
 #include <thread>
+
+#include "boids_common.h"
+#include "boids_gpu.h"
 
 using namespace std;
 
 // settings
-// const unsigned int SCR_WIDTH = 1200;
-// const unsigned int SCR_HEIGHT = 900;
-const unsigned int SCR_WIDTH = 1920;
-const unsigned int SCR_HEIGHT = 1080;
-float speed_factor = 0.001f;
+const unsigned int SCR_WIDTH = 1200;
+const unsigned int SCR_HEIGHT = 900;
 
 // public
-GLuint instanceVBO;
-GLuint quadVAO, quadVBO;
-const int N = 5000; // 100 lub 10000
-glm::vec2 *translations;
+GLuint triangleVAO, triangleVBO;
+const int N = 600; // 100 lub 10000
+glm::vec2 *start_translations;
 
-GLuint translationVBO;
-glm::mat4 *trans_matrix;
+GLuint transformationVBO;
+glm::mat4 *trans_matrices;
 
 // set up vertex data (and buffer(s)) and configure vertex attributes
 // ------------------------------------------------------------------
-float quadVertices[] = {
-    // positions     // colors
-    -0.006125f, -0.006125f,  0.0f, 0.0f, 0.0f,
-    0.0f,    0.01f,  1.0f, 1.0f, 0.0f,
-    0.006125f,  -0.006125f,  0.0f, 0.0f, 0.0f
+float vertexData[] = {
+    // positions            // colors
+    -0.006125f, -0.006125f, 0.0f, 0.0f, 0.0f,
+    0.0f,        0.01f,     1.0f, 1.0f, 0.0f,
+    0.006125f,  -0.006125f, 0.0f, 0.0f, 0.0f
 };
 
-void logic();
 void init_transform_resources();
 void render(SDL_Window* window, Shader* shader);
 
-struct bboid
-{
-    float x;
-    float y;
-    float dx;
-    float dy;
-};
+// struct Boid
+// {
+//     float x;
+//     float y;
+//     float dx;
+//     float dy;
+// };
 
-bboid *d_boids;
+Boid *d_boids;
 glm::mat4 *d_trans;
 
 Shader* init_resources()
@@ -69,24 +65,23 @@ Shader* init_resources()
     // build and compile shaders
     // -------------------------
     Shader* shader = new Shader("boids.vs", "boids.fs");
-    trans_matrix = new glm::mat4[N];
-    translations = new glm::vec2[N];
+    trans_matrices = new glm::mat4[N];
+    start_translations = new glm::vec2[N];
        
-    srand(time(NULL));
     for (int i = 0; i < N; i++)
     {                
         glm::vec3 translation;
         translation.x = glm::linearRand(-1.0f, 1.0f);
         translation.y = glm::linearRand(-1.0f, 1.0f);
-        trans_matrix[i] = glm::translate(glm::mat4(1.0f), translation);
-        translations[i] = translation;
+        trans_matrices[i] = glm::translate(glm::mat4(1.0f), translation);
+        start_translations[i] = translation;
     }
     
-    glGenVertexArrays(1, &quadVAO);
-    glGenBuffers(1, &quadVBO);
-    glBindVertexArray(quadVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+    glGenVertexArrays(1, &triangleVAO);
+    glGenBuffers(1, &triangleVBO);
+    glBindVertexArray(triangleVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, triangleVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertexData), vertexData, GL_STATIC_DRAW);
     // wspolne dane
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(
@@ -107,14 +102,15 @@ Shader* init_resources()
 
 void init_transform_resources()
 {    
-    glGenBuffers(1, &translationVBO);
-    glBindBuffer(GL_ARRAY_BUFFER, translationVBO);
-    glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
+    // kazdy trojkat ma swoja macierz transformacji
+    glGenBuffers(1, &transformationVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, transformationVBO);
+    glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrices[0], GL_DYNAMIC_DRAW);
 
     // rejestracja jako zasob cuda
     // CudaGraphicsGLRegisterBuffer()
     
-    glBindVertexArray(quadVAO);
+    glBindVertexArray(triangleVAO);
     // set attribute pointers for matrix (4 times vec4)
     glEnableVertexAttribArray(3);
     glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)0);
@@ -133,10 +129,7 @@ void init_transform_resources()
     glBindVertexArray(0);
 }
 
-
-
-
-void print_debug(bboid &boid)
+void print_debug(Boid &boid)
 {
     cout << "boid.x = " << boid.x << endl;
     cout << "boid.y = " << boid.y << endl;
@@ -145,200 +138,28 @@ void print_debug(bboid &boid)
     return;
 }
 
-void set_initial_boid_position(bboid &boid, float *quadVertices, glm::vec2 &translation)
+void set_initial_boid_position(Boid &boid, float *vertexData, glm::vec2 &translation)
 {
     float origin_x = 0.0f;
-    float origin_y = (quadVertices[6] + quadVertices[1]) / 2;
+    float origin_y = (vertexData[6] + vertexData[1]) / 2;
     boid.x = origin_x + translation.x;
     boid.y = origin_y + translation.y;    
 }
 
-void init_boid_structure(bboid *boids, int n, 
-                         float *quadVertices, glm::vec2 *translations)
+void init_boid_structure(Boid *boids, int n, 
+                         float *vertexData, glm::vec2 *start_translations)
 {
     for (int i = 0; i < n; i++)
     {
         boids[i].dx = glm::linearRand(-0.5f, 0.5f) / 100;
         boids[i].dy = glm::linearRand(-0.5f, 0.5f) / 100;
-        set_initial_boid_position(boids[i], quadVertices, translations[i]);        
+        set_initial_boid_position(boids[i], vertexData, start_translations[i]);        
     }
 }
 
-__device__ float distance(bboid &boid1, bboid &boid2)
+void copy_boid_structure_to_device(Boid **boids, Boid **d_pointer, int n)
 {
-    return glm::sqrt(
-        (boid1.x - boid2.x) * (boid1.x - boid2.x) +
-            (boid1.y - boid2.y) * (boid1.y - boid2.y)
-    );
-}
-
-__device__ void fly_towards_center(bboid *boids, int index, int n)
-{    
-    bboid &boid = boids[index];
-    const float centering_factor = 0.002f; // adjust velocity by this %
-    const float visual_range = 0.07f;
-
-    float centerX = 0.0f;
-    float centerY = 0.0f;
-    int num_neighbors = 0;
-
-    for (unsigned int i = 0; i < n; i++)
-    {
-        bboid &other = boids[i];
-        if (distance(boid, other) < visual_range)
-        {
-            centerX += other.x;
-            centerY += other.y;
-            num_neighbors += 1;
-        }
-    }
-
-    if (num_neighbors)
-    {
-        centerX = centerX / num_neighbors;
-        centerY = centerY / num_neighbors;
-
-        boid.dx += (centerX - boid.x) * centering_factor;
-        boid.dy += (centerY - boid.y) * centering_factor;
-    }
-}
-
-__device__ void keep_within_bounds(bboid *boids, int index)
-{
-    bboid &boid = boids[index];
-    const float margin = 0.05f;
-    const float turn_factor = 1.0f / 1000;
-
-    if (boid.x < -1.0f + margin)
-        boid.dx += turn_factor;    
-
-    if (boid.x > 1.0f - margin)
-        boid.dx -= turn_factor;
-
-    if (boid.y < -1.0f + margin)
-        boid.dy += turn_factor;    
-
-    if (boid.y > 1.0f - margin)
-        boid.dy -= turn_factor;
-}
-
-__device__ void limit_speed(bboid *boids, int index)
-{
-    bboid &boid = boids[index];
-    const float speed_limit = 0.01f;
-
-    float speed = glm::sqrt(boid.dx * boid.dx + boid.dy * boid.dy);
-    if (speed <= speed_limit)
-        return;
-    boid.dx = (boid.dx / speed) * speed_limit;
-    boid.dy = (boid.dy / speed) * speed_limit;
-}
-
-__device__ void avoid_others(bboid *boids, int index, int n)
-{
-    bboid &boid = boids[index];
-    const float min_distance = 0.014f; // The distance to stay away from other boids
-    const float avoid_factor = 0.05f; // Adjust velocity by this %
-    float moveX = 0;
-    float moveY = 0;
-    for (unsigned int i = 0; i < n; i++)
-    {
-        if (i == index)
-            continue;
-        bboid &other = boids[i];        
-        if (distance(boid, other) < min_distance)
-        {
-            moveX += boid.x - other.x;
-            moveY += boid.y - other.y;
-        }
-    } 
-    
-    boid.dx += moveX * avoid_factor;
-    boid.dy += moveY * avoid_factor;
-}
-
-__device__ void match_velocity(bboid *boids, int index, int n)
-{
-    bboid &boid = boids[index];
-    const float matching_factor = 0.05f;
-    const float visual_range = 0.07f; // TODO - to do glob. zmiennej
-
-    float avgDX = boid.dx;
-    float avgDY = boid.dy;
-    int num_neighbors = 0;
-
-    for (unsigned int i = 0; i < n; i++)
-    {
-        if (i == index)
-            continue;
-        bboid &other = boids[i];
-        if (distance(boid, other) < visual_range)
-        {
-            avgDX += other.dx;
-            avgDY += other.dy;
-            num_neighbors += 1;
-        }
-    }
-    // zeby zmiana dx, dy nizej nie zaburzyla
-    // sredniej liczonej w innym watku wyzej
-    __syncthreads();    
-    if (num_neighbors)
-    {
-        avgDX = avgDX / num_neighbors;
-        avgDY = avgDY / num_neighbors;
-
-        boid.dx += (avgDX - boid.dx) * matching_factor;
-        boid.dy += (avgDY - boid.dy) * matching_factor;
-    }
-}
-
-__global__ void kernel_test(bboid *boids, glm::mat4 *trans, int n)
-{
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (index >= n)
-    {
-        // printf("%d\n", index);
-        return;
-    }
-        
-    fly_towards_center(boids, index, n);
-    avoid_others(boids, index, n);
-    // zeby zmiana predkosci (dx, dy) w avoid_others 
-    // nie zaburzyla sredniej liczonej
-    //  w innym watku w match_velocity
-    __syncthreads();
-    match_velocity(boids, index, n);
-    limit_speed(boids, index);
-    keep_within_bounds(boids, index);
-    // __syncthreads(); // wczesniej nie zmieniamy x, y
-    bboid &boid = boids[index];
-    boid.x += boid.dx;
-    boid.y += boid.dy;
-    float angle = glm::atan(boid.dy / boid.dx);
-    float pi = glm::pi<float>();
-    if (boid.dx <= 0)
-    {
-        angle += pi / 2;
-    }        
-    else
-    {
-        angle -= pi / 2;
-    }
-    auto rotation = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0.0f, 0.0f, 1.0f));
-    auto move2 = glm::translate(glm::mat4(1.0f), glm::vec3(boid.x, boid.y, 0.0f));
-    trans[index] = move2 * rotation;
-    // printf("boids[%d].x = %f\n", index, boid.x);
-    // cout << "boid.x = " << boid.x << endl;
-    // cout << "boid.y = " << boid.y << endl;
-    // cout << "boid.dx = " << boid.dx << endl;
-    // cout << "boid.dy = " << boid.dy << endl;
-}
-
-
-
-void copy_boid_structure_to_device(bboid **boids, bboid **d_pointer, int n)
-{
-    size_t size = sizeof(bboid);
+    size_t size = sizeof(Boid);
     cudaMalloc(d_pointer, n * size);
     cudaMemcpy(*d_pointer, *boids, n * size, cudaMemcpyHostToDevice);
 }
@@ -355,21 +176,21 @@ void copy_trans_matrix_to_host(glm::mat4 **mat, glm::mat4 **d_mat, int n)
     cudaMemcpy(*mat, *d_mat, n *  sizeof(glm::mat4), cudaMemcpyDeviceToHost);
 }
 
-void copy_boid_structure_to_host(bboid **boids, bboid **d_pointer, int n)
+void copy_boid_structure_to_host(Boid **boids, Boid **d_pointer, int n)
 {   
-    cudaMemcpy(*boids, *d_pointer, n *  sizeof(bboid), cudaMemcpyDeviceToHost);
+    cudaMemcpy(*boids, *d_pointer, n *  sizeof(Boid), cudaMemcpyDeviceToHost);
 }
 
 void main_loop(SDL_Window* window, Shader* shader)
 {
-    bboid *boids = new bboid[N];
-    init_boid_structure(boids, N, quadVertices, translations);
+    Boid *boids = new Boid[N];
+    init_boid_structure(boids, N, vertexData, start_translations);
     for (int i = 0; i < N; i++)
     {
         cout << i << ": " << boids[i].x << ", " << boids[i].y << endl;
     }
     copy_boid_structure_to_device(&boids, &d_boids, N);
-    copy_trans_matrix_to_device(&trans_matrix, &d_trans, N);
+    copy_trans_matrix_to_device(&trans_matrices, &d_trans, N);
     dim3 num_threads(1024);
     dim3 num_blocks(N / 1024 + 1);
     while (true) {
@@ -400,9 +221,9 @@ void main_loop(SDL_Window* window, Shader* shader)
         //render(window, shader);
         kernel_test<<<num_blocks, num_threads>>>(d_boids, d_trans, N);
         //cudaDeviceSynchronize();
-        copy_trans_matrix_to_host(&trans_matrix, &d_trans, N);
-        glBindBuffer(GL_ARRAY_BUFFER, translationVBO);
-        glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
+        copy_trans_matrix_to_host(&trans_matrices, &d_trans, N);
+        glBindBuffer(GL_ARRAY_BUFFER, transformationVBO);
+        glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrices[0], GL_DYNAMIC_DRAW);
         // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::mat4) * index, sizeof(glm::mat4), &matrix);
         glBindBuffer(GL_ARRAY_BUFFER, 0); 
 		render(window, shader);
@@ -419,33 +240,16 @@ void main_loop(SDL_Window* window, Shader* shader)
 	}
 }
 
-void logic()
-{
-    float move = sinf(SDL_GetTicks() / 10000.0 * (2*3.14) / 5); 
-    // // 45° per second
-	// // float angle = SDL_GetTicks() / 1000.0 * 45;
-	// // glm::vec3 axis_z(0, 1, 0);
-	// //glm::mat4 m_transform = glm::translate(glm::mat4(1.0f), glm::vec3(move, 0.0, 0.0));
-    int index = SDL_GetTicks() % 100;
-    if (rand() % 2 == 0)
-        move = -move;
-    translations[index].x = translations[index].x + move;
-    translations[index].y = translations[index].y + move/2;
-    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec2) * 100, &translations[0], GL_STATIC_DRAW);
-    //glBufferSubData
-    //cout << translations[SDL_GetTicks() % 100].x << endl;
-}
 
 void render(SDL_Window* window, Shader* shader)
 {
     glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
  
-    // draw 100 instanced quads   
+    // draw N instanced triangles   
     (*shader).use();
-    glBindVertexArray(quadVAO);
-    glDrawArraysInstanced(GL_TRIANGLES, 0, 3, N); // 100 triangles of 3 vertices each
+    glBindVertexArray(triangleVAO);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, 3, N); // N triangles of 3 vertices each
     glBindVertexArray(0); // zrywa binding
 
     SDL_GL_SwapWindow(window);
@@ -453,17 +257,16 @@ void render(SDL_Window* window, Shader* shader)
 
 void free_resources(SDL_Window* window, Shader *shader)
 {
-    glDeleteVertexArrays(1, &quadVAO);
-    glDeleteBuffers(1, &quadVBO);
-    glDeleteBuffers(1, &instanceVBO);
-    glDeleteBuffers(1, &translationVBO);
-    free(shader);
-    free(trans_matrix);
-    free(translations);
+    glDeleteVertexArrays(1, &triangleVAO);
+    glDeleteBuffers(1, &triangleVBO);
+    glDeleteBuffers(1, &transformationVBO);
+    delete shader;
+    delete trans_matrices;
+    delete start_translations;
     cudaFree(d_trans);
     cudaFree(d_boids);
-    SDL_DestroyWindow(window);
 
+    SDL_DestroyWindow(window);
     //Quit SDL subsystems
     SDL_Quit();
     cout << "Wyczyszczono" << endl;
