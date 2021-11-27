@@ -9,10 +9,11 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/random.hpp>
 
 #include <iostream>
 
-#include "boidUtils.h"
+#include "finalBoidUtils.h"
 #include <vector>
 #include <chrono>
 #include <thread>
@@ -22,33 +23,29 @@ using namespace std;
 // settings
 // const unsigned int SCR_WIDTH = 1200;
 // const unsigned int SCR_HEIGHT = 900;
-const unsigned int SCR_WIDTH = 800;
-const unsigned int SCR_HEIGHT = 600;
+const unsigned int SCR_WIDTH = 1200;
+const unsigned int SCR_HEIGHT = 900;
 float speed_factor = 0.001f;
 
 // public
 GLuint instanceVBO;
 GLuint quadVAO, quadVBO;
-const int N = 100; // 100 lub 10000
+const int N = 500; // 100 lub 10000
 glm::vec2 translations[N];
 
 GLuint translationVBO;
 glm::mat4 trans_matrix[N];
-glm::mat4 applied_rotations[N];
-float cum_angle[N];
-glm::mat4 applied_move[N];
 
 // set up vertex data (and buffer(s)) and configure vertex attributes
 // ------------------------------------------------------------------
 float quadVertices[] = {
     // positions     // colors
-    -0.05f, -0.05f,  0.0f, 0.0f, 0.0f,
-    0.0f,    0.08f,  1.0f, 1.0f, 0.0f,
-    0.05f,  -0.05f,  0.0f, 0.0f, 0.0f
+    -0.025f, -0.025f,  0.0f, 0.0f, 0.0f,
+    0.0f,    0.04f,  1.0f, 1.0f, 0.0f,
+    0.025f,  -0.025f,  0.0f, 0.0f, 0.0f
 };
 
 void logic();
-void init_helper_arrs();
 void init_transform_resources();
 void render(SDL_Window* window, Shader* shader);
 
@@ -61,22 +58,16 @@ Shader* init_resources()
     // build and compile shaders
     // -------------------------
     Shader* shader = new Shader("boids.vs", "boids.fs");
-    
-    // generate a list of 100 quad locations/translation-vectors
-    // ---------------------------------------------------------
-    //glm::vec2 translations[100];
-    int index = 0;
-    float offset = 0.1f;
-    // tu zmienic przy zmianie N na 10000
+
+    // tu zmienic przy zmianie N na 10000    
     srand(time(NULL));
     for (int i = 0; i < N; i++)
-    {
-        float random = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        glm::vec2 translation;
-        translation.x = random * 2 - 1;
-        random = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        translation.y = random * 2 - 1;
-        translations[index++] = translation;
+    {                
+        glm::vec3 translation;
+        translation.x = glm::linearRand(-1.0f, 1.0f);
+        translation.y = glm::linearRand(-1.0f, 1.0f);
+        trans_matrix[i] = glm::translate(glm::mat4(1.0f), translation);
+        translations[i] = translation;
     }
     // for (int y = -10; y < 10; y += 2)
     // {
@@ -89,13 +80,6 @@ Shader* init_resources()
     //     }
     // }
 
-    // store instance data in an array buffer
-    // --------------------------------------
-    glGenBuffers(1, &instanceVBO);
-    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec2) * N, &translations[0], GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);    
-    
     glGenVertexArrays(1, &quadVAO);
     glGenBuffers(1, &quadVBO);
     glBindVertexArray(quadVAO);
@@ -113,12 +97,6 @@ Shader* init_resources()
     );
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(2 * sizeof(float)));
-    // also set instance data
-    glEnableVertexAttribArray(2);
-    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO); // this attribute comes from a different vertex buffer
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glVertexAttribDivisor(2, 1); // tell OpenGL this is an instanced vertex attribute.
     
     init_transform_resources();
 
@@ -126,9 +104,7 @@ Shader* init_resources()
 }
 
 void init_transform_resources()
-{
-    init_helper_arrs();
-
+{    
     glGenBuffers(1, &translationVBO);
     glBindBuffer(GL_ARRAY_BUFFER, translationVBO);
     glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
@@ -153,48 +129,61 @@ void init_transform_resources()
 }
 
 
-void init_helper_arrs()
+void print_debug(bboid &boid)
+{
+    cout << "boid.x = " << boid.x << endl;
+    cout << "boid.y = " << boid.y << endl;
+    cout << "boid.dx = " << boid.dx << endl;
+    cout << "boid.dy = " << boid.dy << endl;
+    return;
+}
+
+void boid_logic(std::vector<bboid> &boids)
 {
     for (int i = 0; i < N; i++)
     {
-        trans_matrix[i] = glm::mat4(1.0f);
-        applied_rotations[i] = glm::mat4(1.0f);
-        applied_move[i] = glm::mat4(1.0f);
-    }
-}
-
-void logic_rotate_all()
-{    
-    // do debugowania
-    // float act_speed = speed_factor;
-    // bool requestChange = false;
-    // if (requestChange)
-    //     speed_factor = act_speed;
-    for (int index = 0; index < N; index++)
-    {        
-        float angle = (rand() % 360) / (rand() % 1000 + 200.0f);
-        float& sum_angle = cum_angle[index];
-        sum_angle += angle;
-        if (sum_angle > 360)
+        bboid &boid = boids[i];
+        fly_towards_center(boid, boids);
+        avoid_others(boid, boids, i);
+        match_velocity(boid, boids, i);
+        limit_speed(boid);
+        keep_within_bounds(boid, boids);
+        boid.x += boid.dx;
+        boid.y += boid.dy;
+        // float angle = boid.dy / boid.dx;
+        auto pi = glm::pi<float>();
+        float angle = glm::atan(boid.dy / boid.dx);        
+        // cout << "anglePrev = " << angle/pi*180 << endl;
+        //float angle = glm::linearRand(-pi, pi);
+        if (boid.dx <= 0)
         {
-            sum_angle = 360 - sum_angle;
+            angle += pi / 2;
+        }        
+        else
+        {
+            angle -= pi / 2;
         }
-        float moveX = speed_factor * sinf(glm::radians(sum_angle));
-        float moveY = speed_factor * cosf(glm::radians(sum_angle));
-
-        glm::mat4& move_translation = applied_move[index];
-        glm::mat4& rotation = applied_rotations[index];
-        glm::mat4& matrix = trans_matrix[index];
-        // na poczatek
-        glm::mat4 translation1 = glm::translate(glm::mat4(1.0f), glm::vec3(-translations[index].x, -translations[index].y, 0.0));
-        // przeniesienie tam gdzie wskazuje rotacja
-        move_translation = glm::translate(move_translation, glm::vec3(moveX, moveY, 0.0));
-        // rotacja
-        rotation = glm::rotate(rotation, glm::radians(angle), glm::vec3(0.0, 0.0, 1.0));
-        // powrot na miejsce
-        glm::mat4 translation2 = glm::translate(glm::mat4(1.0f), glm::vec3(translations[index].x, translations[index].y, 0.0));
-        
-        matrix = translation2 * rotation * move_translation * translation1;    
+        // float angle = -pi / 4;
+        // if (i == 0)
+        // {
+        //     print_debug(boid);
+        //     cout << "dy / dx = " << boid.dy/boid.dx << endl;
+        //     cout << "angle = " << angle/pi*180 << endl;            
+        // }
+        move_logic(boid, trans_matrix[i], angle);        
+        // if (angle > pi / 2 || angle < -pi / 2)
+        // {
+        //     cout << angle << endl;
+        //     angle = 0;
+        // }
+        // else
+        // {
+        //     angle = glm::atan(boid.dy, boid.dx);
+        //     move_logic(boid, trans_matrix[i], angle);
+        // }        
+        // float angle = glm::atan2(boid.dy, boid.dx);
+        // move_boid(boid, trans_matrix[i], boid.x, boid.y);
+        // rotate_boid_and_return(boid, trans_matrix[i], angle);
     }
     glBindBuffer(GL_ARRAY_BUFFER, translationVBO);
     glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
@@ -202,39 +191,13 @@ void logic_rotate_all()
     glBindBuffer(GL_ARRAY_BUFFER, 0); 
 }
 
-void logic_rotate()
-{
-    static int index = 0;
-    glm::mat4& matrix = trans_matrix[index];
-    glm::mat4 translation1 = glm::translate(glm::mat4(1.0f), glm::vec3(-translations[index].x, -translations[index].y, 0.0));
-    glm::mat4 rotation = glm::rotate(applied_rotations[index], glm::radians(1.0f), glm::vec3(0.0, 0.0, 1.0));
-    applied_rotations[index] = rotation;
-    glm::mat4 translation2 = glm::translate(glm::mat4(1.0f), glm::vec3(translations[index].x, translations[index].y, 0.0));
-    matrix = translation2 * rotation * translation1;
-    //bez translacji obracaly sie wokol srodka
-    glBindBuffer(GL_ARRAY_BUFFER, translationVBO);
-    glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::mat4) * index, sizeof(glm::mat4), &matrix);
-
-    index++;
-    if (index == 100)
-    {
-        index = 0;
-    }
-}
-
 void main_loop(SDL_Window* window, Shader* shader)
 {
+    std::vector<bboid> boids(N);
+    init_boid_structure(boids, N, quadVertices, translations);
     for (int i = 0; i < N; i++)
     {
-        auto pos = get_initial_boid_position(quadVertices, translations[i]);
-        cout << i << ": " << pos.x << ", " << pos.y << endl;
-    }
-    std::vector<boid> boids(N);
-    init_boids(boids, quadVertices, translations, N,
-               SCR_WIDTH, SCR_HEIGHT);
-    for (int i = 0; i < N; i++)
-    {
-        cout << i << ": " << boids[i].pos_x << ", " << boids[i].pos_y << endl;
+        cout << i << ": " << boids[i].x << ", " << boids[i].y << endl;
     }
     while (true) {
         Uint32 frame_start = SDL_GetTicks();
@@ -246,30 +209,7 @@ void main_loop(SDL_Window* window, Shader* shader)
             if (ev.type == SDL_KEYDOWN &&
                 ev.key.keysym.sym == SDLK_r)
             {
-                //logic_rotate_all();
-                myMain(boids, N);
-                for (int i = 0; i < N; i++)
-                {
-                    boids[i].pos_x += boids[i].speed_x;
-                    boids[i].pos_y += boids[i].speed_y;
-                    if (boids[i].pos_x > SCR_WIDTH) boids[i].pos_x -= SCR_WIDTH;
-                    else if (boids[i].pos_x < 0) boids[i].pos_x += SCR_WIDTH;
-                    if (boids[i].pos_y > SCR_HEIGHT) boids[i].pos_y -= SCR_HEIGHT;
-                    else if (boids[i].pos_y < 0) boids[i].pos_y += SCR_HEIGHT;
-                    convertToSmall(boids[i], SCR_WIDTH, SCR_HEIGHT);
-                    // if (boids[i].pos_x > 1.0f)
-                    //     boids[i].pos_x = -1.0f;
-                    // else if (boids[i].pos_x < -1.0f)
-                    //     boids[i].pos_x = 1.0f;
-                    // if (boids[i].pos_y > 1.0f)
-                    //     boids[i].pos_y = -1.0f;            
-                    // else if (boids[i].pos_y < -1.0f)
-                    //     boids[i].pos_y = 1.0f;
-                    transform_boid(trans_matrix[i], applied_move[i],
-                                applied_rotations[i], translations[i], boids[i]
-                                );
-                    convertToBig(boids[i], SCR_WIDTH, SCR_HEIGHT);
-                }
+                //boid_logic(boids);                
             }
             if (ev.type == SDL_WINDOWEVENT &&
                 ev.window.event == SDL_WINDOWEVENT_RESIZED)
@@ -277,36 +217,7 @@ void main_loop(SDL_Window* window, Shader* shader)
                 glViewport(0, 0, ev.window.data1, ev.window.data2);
             }
 		}
-        // logic_rotate_all();
-        //logic();
-        // move_boid(trans_matrix[0], translations[0], 0.0f, 0.0f);        
-        //myMain(boids, N);
-        // for (int i = 0; i < N; i++)
-        // {
-        //     boids[i].pos_x += boids[i].speed_x;
-        //     boids[i].pos_y += boids[i].speed_y;
-        //     if (boids[i].pos_x > SCR_WIDTH) boids[i].pos_x -= SCR_WIDTH;
-        //     else if (boids[i].pos_x < 0) boids[i].pos_x += SCR_WIDTH;
-        //     if (boids[i].pos_y > SCR_HEIGHT) boids[i].pos_y -= SCR_HEIGHT;
-        //     else if (boids[i].pos_y < 0) boids[i].pos_y += SCR_HEIGHT;
-        //     convertToSmall(boids[i], SCR_WIDTH, SCR_HEIGHT);
-        //     // if (boids[i].pos_x > 1.0f)
-        //     //     boids[i].pos_x = -1.0f;
-        //     // else if (boids[i].pos_x < -1.0f)
-        //     //     boids[i].pos_x = 1.0f;
-        //     // if (boids[i].pos_y > 1.0f)
-        //     //     boids[i].pos_y = -1.0f;            
-        //     // else if (boids[i].pos_y < -1.0f)
-        //     //     boids[i].pos_y = 1.0f;
-        //     transform_boid(trans_matrix[i], applied_move[i],
-        //                    applied_rotations[i], translations[i], boids[i]
-        //                    );
-        //     convertToBig(boids[i], SCR_WIDTH, SCR_HEIGHT);
-        // }
-        glBindBuffer(GL_ARRAY_BUFFER, translationVBO);
-        glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrix[0], GL_DYNAMIC_DRAW);
-        // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::mat4) * index, sizeof(glm::mat4), &matrix);
-        glBindBuffer(GL_ARRAY_BUFFER, 0); 
+        boid_logic(boids);
         render(window, shader);
 		//render(window, shader);
         frame_time = SDL_GetTicks() - frame_start;
@@ -315,9 +226,9 @@ void main_loop(SDL_Window* window, Shader* shader)
         //     cout << i << ": " << boids[i].pos_x << ", " << boids[i].pos_y << endl;
         // }
         
-        std::chrono::milliseconds timespan(20); // or whatever
+        // std::chrono::milliseconds timespan(20); // or whatever
 
-        std::this_thread::sleep_for(timespan);
+        // std::this_thread::sleep_for(timespan);
         cout << frame_time << endl;
 	}
 }

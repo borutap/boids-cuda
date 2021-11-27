@@ -3,7 +3,7 @@ all: boids
 #boids: boids.cu
 #nvcc boids.cu -lglut -lGLEW -lGL -lSDL2 -o boids 
 boids: boids.cpp
-	g++ -Wall -g boids.cpp boidUtils.cpp myMath.cpp -o boids $(LDLIBS)
+	g++ -Wall -g boids.cpp finalBoidUtils.cpp -o boids $(LDLIBS)
 testt: testt.cu
 	nvcc testt.cu -Xcudafe --diag_suppress=20012 -o testt $(LDLIBS)
 # ignorowanie flag dot. biblioteki glm typu:
