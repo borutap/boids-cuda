@@ -18,16 +18,18 @@
 
 #include "boids_common.h"
 #include "boids_gpu.h"
+#include "boids_cpu.h"
 
 using namespace std;
 
 // settings
 const unsigned int SCR_WIDTH = 1200;
 const unsigned int SCR_HEIGHT = 900;
+const bool RUN_CPU = true;
 
 // public
 GLuint triangleVAO, triangleVBO;
-const int N = 600; // 100 lub 10000
+const int N = 1000; // 100 lub 10000
 glm::vec2 *start_translations;
 
 GLuint transformationVBO;
@@ -146,15 +148,16 @@ void set_initial_boid_position(Boid &boid, float *vertexData, glm::vec2 &transla
     boid.y = origin_y + translation.y;    
 }
 
-void init_boid_structure(Boid *boids, int n, 
-                         float *vertexData, glm::vec2 *start_translations)
+Boid *init_boid_structure(int n, float *vertexData, glm::vec2 *start_translations)
 {
+    Boid *boids = new Boid[n];
     for (int i = 0; i < n; i++)
     {
         boids[i].dx = glm::linearRand(-0.5f, 0.5f) / 100;
         boids[i].dy = glm::linearRand(-0.5f, 0.5f) / 100;
         set_initial_boid_position(boids[i], vertexData, start_translations[i]);        
     }
+    return boids;
 }
 
 void copy_boid_structure_to_device(Boid **boids, Boid **d_pointer, int n)
@@ -183,8 +186,7 @@ void copy_boid_structure_to_host(Boid **boids, Boid **d_pointer, int n)
 
 void main_loop(SDL_Window* window, Shader* shader)
 {
-    Boid *boids = new Boid[N];
-    init_boid_structure(boids, N, vertexData, start_translations);
+    Boid *boids = init_boid_structure(N, vertexData, start_translations);    
     for (int i = 0; i < N; i++)
     {
         cout << i << ": " << boids[i].x << ", " << boids[i].y << endl;
@@ -217,24 +219,23 @@ void main_loop(SDL_Window* window, Shader* shader)
                 glViewport(0, 0, ev.window.data1, ev.window.data2);
             }
 		}
-        //boid_logic(boids);
-        //render(window, shader);
-        kernel_test<<<num_blocks, num_threads>>>(d_boids, d_trans, N);
-        //cudaDeviceSynchronize();
-        copy_trans_matrix_to_host(&trans_matrices, &d_trans, N);
+        if (RUN_CPU)
+        {
+            cpu::cpu_test(boids, trans_matrices, N);
+        }
+        else
+        {
+            kernel_test<<<num_blocks, num_threads>>>(d_boids, d_trans, N);
+            copy_trans_matrix_to_host(&trans_matrices, &d_trans, N);
+        }        
         glBindBuffer(GL_ARRAY_BUFFER, transformationVBO);
         glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrices[0], GL_DYNAMIC_DRAW);
         // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::mat4) * index, sizeof(glm::mat4), &matrix);
         glBindBuffer(GL_ARRAY_BUFFER, 0); 
 		render(window, shader);
         frame_time = SDL_GetTicks() - frame_start;
-        // for (int i = 0; i < N; i++)
-        // {
-        //     cout << i << ": " << boids[i].pos_x << ", " << boids[i].pos_y << endl;
-        // }
-        
-        // std::chrono::milliseconds timespan(20); // or whatever
 
+        // std::chrono::milliseconds timespan(20); // or whatever
         // std::this_thread::sleep_for(timespan);
         cout << frame_time << endl;
 	}
@@ -281,28 +282,31 @@ int main()
 		SCR_WIDTH, SCR_HEIGHT,
 		SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
 
-    if (window == NULL) {
+    if (window == NULL)
+    {
         cerr << "Error: can't create window: " << SDL_GetError() << endl;
         return EXIT_FAILURE;
     }
-	SDL_GL_CreateContext(window);
+    SDL_GL_CreateContext(window);
 
-	/* Extension wrangler initialising */
-	GLenum glew_status = glewInit();
-	if (glew_status != GLEW_OK) {
-		cerr << "Error: glewInit: " << glewGetErrorString(glew_status) << endl;
-		return EXIT_FAILURE;
-	}
+    /* Extension wrangler initialising */
+    GLenum glew_status = glewInit();
+    if (glew_status != GLEW_OK)
+    {
+        cerr << "Error: glewInit: " << glewGetErrorString(glew_status) << endl;
+        return EXIT_FAILURE;
+    }
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
-	//SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-	//SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-	SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 1);
+    //SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+    //SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 1);
     // SDL_GL_SetSwapInterval(0); // wylacza vsync
-	if (SDL_GL_CreateContext(window) == NULL) {
-		cerr << "Error: SDL_GL_CreateContext: " << SDL_GetError() << endl;
-		return EXIT_FAILURE;
-	}
+    if (SDL_GL_CreateContext(window) == NULL)
+    {
+        cerr << "Error: SDL_GL_CreateContext: " << SDL_GetError() << endl;
+        return EXIT_FAILURE;
+    }
 
     Shader* shader = init_resources();
 
