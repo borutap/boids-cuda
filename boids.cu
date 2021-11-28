@@ -20,21 +20,23 @@
 #include "boids_gpu.h"
 #include "boids_cpu.h"
 #include "parameters.h"
+#include "logger.h"
 
 using namespace std;
 
 // settings
 const unsigned int SCR_WIDTH = 1200;
 const unsigned int SCR_HEIGHT = 900;
-const int N = 600;
-const bool RUN_CPU = true;
+const int N = 1000;
+const bool RUN_CPU = false;
 
 // public
 GLuint triangleVAO, triangleVBO;
-glm::vec2 *start_translations;
-
 GLuint transformationVBO;
+glm::vec2 *start_translations;
 glm::mat4 *trans_matrices;
+Boid *d_boids;
+glm::mat4 *d_trans;
 
 // set up vertex data and configure vertex attributes
 float vertexData[] = {
@@ -46,9 +48,6 @@ float vertexData[] = {
 
 void init_transform_resources();
 void render(SDL_Window* window, Shader* shader);
-
-Boid *d_boids;
-glm::mat4 *d_trans;
 
 Shader* init_resources()
 {
@@ -183,13 +182,23 @@ void main_loop(SDL_Window* window, Shader* shader)
     {
         cout << i << ": " << boids[i].x << ", " << boids[i].y << endl;
     }
-    copy_boid_structure_to_device(&boids, &d_boids, N);
-    copy_trans_matrix_to_device(&trans_matrices, &d_trans, N);
+    Logger l = Logger(); 
+    if (!RUN_CPU)
+    {
+        l.start_timed_measurement("copy boid to device");
+        copy_boid_structure_to_device(&boids, &d_boids, N);
+        l.end_timed_measurement();
+        l.start_timed_measurement("copy trans to device");
+        copy_trans_matrix_to_device(&trans_matrices, &d_trans, N);
+        l.end_timed_measurement();
+        l.close_file();
+    }
     dim3 num_threads(1024);
     dim3 num_blocks(N / 1024 + 1);
     Parameters p;
     p.set_default();
     p.print_values();
+       
     while (true)
     {
         Uint32 frame_start = SDL_GetTicks();
@@ -222,7 +231,7 @@ void main_loop(SDL_Window* window, Shader* shader)
                 p.centering_factor, p.visual_range, p.margin, p.turn_factor,
                 p.speed_limit, p.min_distance, p.avoid_factor, p.matching_factor);
             copy_trans_matrix_to_host(&trans_matrices, &d_trans, N);
-        }        
+        }
         glBindBuffer(GL_ARRAY_BUFFER, transformationVBO);
         glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrices[0], GL_DYNAMIC_DRAW);
         // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::mat4) * index, sizeof(glm::mat4), &matrix);
