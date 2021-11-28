@@ -29,7 +29,7 @@ const bool RUN_CPU = false;
 
 // public
 GLuint triangleVAO, triangleVBO;
-const int N = 600; // 100 lub 10000
+const int N = 12000; // 100 lub 10000
 glm::vec2 *start_translations;
 
 GLuint transformationVBO;
@@ -46,14 +46,6 @@ float vertexData[] = {
 
 void init_transform_resources();
 void render(SDL_Window* window, Shader* shader);
-
-// struct Boid
-// {
-//     float x;
-//     float y;
-//     float dx;
-//     float dy;
-// };
 
 Boid *d_boids;
 glm::mat4 *d_trans;
