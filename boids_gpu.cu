@@ -3,7 +3,11 @@
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 
-__global__ void kernel_test(Boid *boids, glm::mat4 *trans, int n)
+__global__ void kernel_test(Boid *boids, glm::mat4 *trans, int n,
+                            float centering_factor, float visual_range,
+                            float margin, float turn_factor,
+                            float speed_limit, float min_distance,
+                            float avoid_factor, float matching_factor)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= n)
@@ -11,15 +15,15 @@ __global__ void kernel_test(Boid *boids, glm::mat4 *trans, int n)
         return;
     }
         
-    fly_towards_center(boids, index, n);
-    avoid_others(boids, index, n);
+    fly_towards_center(boids, index, n, centering_factor, visual_range);
+    avoid_others(boids, index, n, min_distance, avoid_factor);
     // zeby zmiana predkosci (dx, dy) w avoid_others 
     // nie zaburzyla sredniej liczonej
     // w innym watku w match_velocity
     __syncthreads();
-    match_velocity(boids, index, n);
-    limit_speed(boids, index);
-    keep_within_bounds(boids, index);
+    match_velocity(boids, index, n, matching_factor, visual_range);
+    limit_speed(boids, index, speed_limit);
+    keep_within_bounds(boids, index, margin, turn_factor);
     // __syncthreads(); // wczesniej nie zmieniamy x, y
     Boid &boid = boids[index];
     boid.x += boid.dx;
@@ -44,11 +48,13 @@ __global__ void kernel_test(Boid *boids, glm::mat4 *trans, int n)
     // cout << "boid.dy = " << boid.dy << endl;
 }
 
-__device__ void fly_towards_center(Boid *boids, int index, int n)
+__device__ void fly_towards_center(Boid *boids, int index, int n,
+                                   float centering_factor,
+                                   float visual_range)
 {    
     Boid &boid = boids[index];
-    const float centering_factor = 0.002f; // adjust velocity by this %
-    const float visual_range = 0.05f;
+    // const float centering_factor = 0.002f; // adjust velocity by this %
+    // const float visual_range = 0.05f;
 
     float centerX = 0.0f;
     float centerY = 0.0f;
@@ -83,11 +89,12 @@ __device__ float distance(Boid &boid1, Boid &boid2)
     );
 }
 
-__device__ void keep_within_bounds(Boid *boids, int index)
+__device__ void keep_within_bounds(Boid *boids, int index,
+                                   float margin, float turn_factor)
 {
     Boid &boid = boids[index];
-    const float margin = 0.1f;
-    const float turn_factor = 1.0f / 2000;
+    // const float margin = 0.1f;
+    // const float turn_factor = 1.0f / 2000;
 
     if (boid.x < -1.0f + margin)
         boid.dx += turn_factor;    
@@ -102,10 +109,10 @@ __device__ void keep_within_bounds(Boid *boids, int index)
         boid.dy -= turn_factor;
 }
 
-__device__ void limit_speed(Boid *boids, int index)
+__device__ void limit_speed(Boid *boids, int index, float speed_limit)
 {
     Boid &boid = boids[index];
-    const float speed_limit = 0.005f;
+    // const float speed_limit = 0.005f;
 
     float speed = glm::sqrt(boid.dx * boid.dx + boid.dy * boid.dy);
     if (speed <= speed_limit)
@@ -114,11 +121,12 @@ __device__ void limit_speed(Boid *boids, int index)
     boid.dy = (boid.dy / speed) * speed_limit;
 }
 
-__device__ void avoid_others(Boid *boids, int index, int n)
+__device__ void avoid_others(Boid *boids, int index, int n,
+                             float min_distance, float avoid_factor)
 {
     Boid &boid = boids[index];
-    const float min_distance = 0.014f; // The distance to stay away from other boids
-    const float avoid_factor = 0.05f; // Adjust velocity by this %
+    // const float min_distance = 0.014f; // The distance to stay away from other boids
+    // const float avoid_factor = 0.05f; // Adjust velocity by this %
     float moveX = 0;
     float moveY = 0;
     for (unsigned int i = 0; i < n; i++)
@@ -137,11 +145,13 @@ __device__ void avoid_others(Boid *boids, int index, int n)
     boid.dy += moveY * avoid_factor;
 }
 
-__device__ void match_velocity(Boid *boids, int index, int n)
+__device__ void match_velocity(Boid *boids, int index, int n,
+                               float matching_factor,
+                               float visual_range)
 {
     Boid &boid = boids[index];
-    const float matching_factor = 0.05f;
-    const float visual_range = 0.05f; // TODO - to do glob. zmiennej
+    // const float matching_factor = 0.05f;
+    // const float visual_range = 0.05f; // TODO - to do glob. zmiennej
 
     float avgDX = boid.dx;
     float avgDY = boid.dy;

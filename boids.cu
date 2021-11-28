@@ -19,13 +19,14 @@
 #include "boids_common.h"
 #include "boids_gpu.h"
 #include "boids_cpu.h"
+#include "parameters.h"
 
 using namespace std;
 
 // settings
 const unsigned int SCR_WIDTH = 1200;
 const unsigned int SCR_HEIGHT = 900;
-const int N = 12000;
+const int N = 3000;
 const bool RUN_CPU = false;
 
 // public
@@ -99,7 +100,7 @@ void init_transform_resources()
     glGenBuffers(1, &transformationVBO);
     glBindBuffer(GL_ARRAY_BUFFER, transformationVBO);
     glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrices[0], GL_DYNAMIC_DRAW);
-
+    // glBindBuffer(GL_ARRAY_BUFFER, 0);
     // rejestracja jako zasob cuda
     // CudaGraphicsGLRegisterBuffer()
     
@@ -186,23 +187,22 @@ void main_loop(SDL_Window* window, Shader* shader)
     copy_trans_matrix_to_device(&trans_matrices, &d_trans, N);
     dim3 num_threads(1024);
     dim3 num_blocks(N / 1024 + 1);
-    while (true) {
+    Parameters p;
+    p.set_default();
+    p.print_values();
+    while (true)
+    {
         Uint32 frame_start = SDL_GetTicks();
         int frame_time;
 		SDL_Event ev;
-		while (SDL_PollEvent(&ev)) {
+		while (SDL_PollEvent(&ev))
+        {
 			if (ev.type == SDL_QUIT)
 				return;
-            if (ev.type == SDL_KEYDOWN &&
-                ev.key.keysym.sym == SDLK_r)
-            {
-                // kernel_test<<<num_blocks, num_threads>>>(d_boids, N); 
-                // cudaDeviceSynchronize();
-                // copy_boid_structure_to_host(&boids, &d_boids, N);
-                // for (int i = 0; i < N; i++)
-                // {
-                //     cout << "yes " << i << ": " << boids[i].x << ", " << boids[i].y << endl;
-                // }
+            if (ev.type == SDL_KEYDOWN && p.handle_keyboard(ev))
+            {   
+                p.print_values();
+                cout << "Last frametime = " << frame_time << "ms" << endl;                    
             }
             if (ev.type == SDL_WINDOWEVENT &&
                 ev.window.event == SDL_WINDOWEVENT_RESIZED)
@@ -216,7 +216,9 @@ void main_loop(SDL_Window* window, Shader* shader)
         }
         else
         {
-            kernel_test<<<num_blocks, num_threads>>>(d_boids, d_trans, N);
+            kernel_test<<<num_blocks, num_threads>>>(d_boids, d_trans, N,
+                p.centering_factor, p.visual_range, p.margin, p.turn_factor,
+                p.speed_limit, p.min_distance, p.avoid_factor, p.matching_factor);
             copy_trans_matrix_to_host(&trans_matrices, &d_trans, N);
         }        
         glBindBuffer(GL_ARRAY_BUFFER, transformationVBO);
@@ -228,7 +230,7 @@ void main_loop(SDL_Window* window, Shader* shader)
 
         // std::chrono::milliseconds timespan(20); // or whatever
         // std::this_thread::sleep_for(timespan);
-        cout << frame_time << endl;
+        // cout << frame_time << endl;
 	}
 }
 
