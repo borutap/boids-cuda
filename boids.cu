@@ -25,11 +25,11 @@ using namespace std;
 // settings
 const unsigned int SCR_WIDTH = 1200;
 const unsigned int SCR_HEIGHT = 900;
-const bool RUN_CPU = true;
+const bool RUN_CPU = false;
 
 // public
 GLuint triangleVAO, triangleVBO;
-const int N = 1000; // 100 lub 10000
+const int N = 600; // 100 lub 10000
 glm::vec2 *start_translations;
 
 GLuint transformationVBO;
