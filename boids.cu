@@ -26,8 +26,8 @@ using namespace std;
 // settings
 const unsigned int SCR_WIDTH = 1200;
 const unsigned int SCR_HEIGHT = 900;
-const int N = 3000;
-const bool RUN_CPU = false;
+const int N = 600;
+const bool RUN_CPU = true;
 
 // public
 GLuint triangleVAO, triangleVBO;
@@ -212,7 +212,9 @@ void main_loop(SDL_Window* window, Shader* shader)
 		}
         if (RUN_CPU)
         {
-            cpu::cpu_test(boids, trans_matrices, N);
+            cpu::cpu_test(boids, trans_matrices, N,
+                p.centering_factor, p.visual_range, p.margin, p.turn_factor,
+                p.speed_limit, p.min_distance, p.avoid_factor, p.matching_factor);
         }
         else
         {
