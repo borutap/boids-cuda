@@ -15,6 +15,7 @@ boids: boids.cu boids_gpu.o boids_cpu.o parameters.o logger.o
 # __device__ annotation is ignored on a function("vec") that is
 # explicitly defaulted on its first declaration
 # nr flagi odkryty z opcji --display-error-number 
+#/usr/lib/x86_64-linux-gnu/libSDL2.a
 clean:
 	rm -f *.o boids
 

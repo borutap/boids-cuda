@@ -10,8 +10,8 @@ void Parameters::set_default()
     margin = 0.1f;
     turn_factor = 0.0005f;
     speed_limit = 0.005f;
-    min_distance = 0.014f; // The distance to stay away from other boids
-    avoid_factor = 0.05f; // Adjust velocity by this %
+    min_distance = 0.014f;
+    avoid_factor = 0.05f; 
     matching_factor = 0.05f;
 }
 

@@ -24,7 +24,7 @@ __global__ void kernel_test(Boid *boids, glm::mat4 *trans, int n,
     match_velocity(boids, index, n, matching_factor, visual_range);
     limit_speed(boids, index, speed_limit);
     keep_within_bounds(boids, index, margin, turn_factor);
-    // __syncthreads(); // wczesniej nie zmieniamy x, y
+    
     Boid &boid = boids[index];
     boid.x += boid.dx;
     boid.y += boid.dy;
@@ -41,11 +41,6 @@ __global__ void kernel_test(Boid *boids, glm::mat4 *trans, int n,
     auto transformation = glm::translate(glm::mat4(1.0f), glm::vec3(boid.x, boid.y, 0.0f));
     transformation = glm::rotate(transformation, angle, glm::vec3(0.0f, 0.0f, 1.0f));
     trans[index] = transformation;
-    // printf("boids[%d].x = %f\n", index, boid.x);
-    // cout << "boid.x = " << boid.x << endl;
-    // cout << "boid.y = " << boid.y << endl;
-    // cout << "boid.dx = " << boid.dx << endl;
-    // cout << "boid.dy = " << boid.dy << endl;
 }
 
 __device__ void fly_towards_center(Boid *boids, int index, int n,
@@ -53,8 +48,7 @@ __device__ void fly_towards_center(Boid *boids, int index, int n,
                                    float visual_range)
 {    
     Boid &boid = boids[index];
-    // const float centering_factor = 0.002f; // adjust velocity by this %
-    // const float visual_range = 0.05f;
+    // centering_factor = adjust velocity by this %
 
     float centerX = 0.0f;
     float centerY = 0.0f;
@@ -112,7 +106,6 @@ __device__ void keep_within_bounds(Boid *boids, int index,
 __device__ void limit_speed(Boid *boids, int index, float speed_limit)
 {
     Boid &boid = boids[index];
-    // const float speed_limit = 0.005f;
 
     float speed = glm::sqrt(boid.dx * boid.dx + boid.dy * boid.dy);
     if (speed <= speed_limit)
@@ -125,8 +118,8 @@ __device__ void avoid_others(Boid *boids, int index, int n,
                              float min_distance, float avoid_factor)
 {
     Boid &boid = boids[index];
-    // const float min_distance = 0.014f; // The distance to stay away from other boids
-    // const float avoid_factor = 0.05f; // Adjust velocity by this %
+    // min_distance = The distance to stay away from other boids
+    // avoid_factor = Adjust velocity by this %
     float moveX = 0;
     float moveY = 0;
     for (unsigned int i = 0; i < n; i++)
@@ -150,8 +143,6 @@ __device__ void match_velocity(Boid *boids, int index, int n,
                                float visual_range)
 {
     Boid &boid = boids[index];
-    // const float matching_factor = 0.05f;
-    // const float visual_range = 0.05f; // TODO - to do glob. zmiennej
 
     float avgDX = boid.dx;
     float avgDY = boid.dy;
@@ -180,4 +171,28 @@ __device__ void match_velocity(Boid *boids, int index, int n,
         boid.dx += (avgDX - boid.dx) * matching_factor;
         boid.dy += (avgDY - boid.dy) * matching_factor;
     }
+}
+
+void copy_boid_structure_to_device(Boid **boids, Boid **d_pointer, int n)
+{
+    size_t size = sizeof(Boid);
+    cudaMalloc(d_pointer, n * size);
+    cudaMemcpy(*d_pointer, *boids, n * size, cudaMemcpyHostToDevice);
+}
+
+void copy_trans_matrix_to_device(glm::mat4 **mat, glm::mat4 **d_mat, int n)
+{
+    size_t size = sizeof(glm::mat4);
+    cudaMalloc(d_mat, n * size);
+    cudaMemcpy(*d_mat, *mat, n * size, cudaMemcpyHostToDevice);
+}
+
+void copy_trans_matrix_to_host(glm::mat4 **mat, glm::mat4 **d_mat, int n)
+{
+    cudaMemcpy(*mat, *d_mat, n *  sizeof(glm::mat4), cudaMemcpyDeviceToHost);
+}
+
+void copy_boid_structure_to_host(Boid **boids, Boid **d_pointer, int n)
+{   
+    cudaMemcpy(*boids, *d_pointer, n *  sizeof(Boid), cudaMemcpyDeviceToHost);
 }

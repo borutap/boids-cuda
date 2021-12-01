@@ -20,4 +20,10 @@ __device__ void match_velocity(Boid *boids, int index, int n,
                                float matching_factor,
                                float visual_range);
 
+// Utilities
+void copy_boid_structure_to_device(Boid **boids, Boid **d_pointer, int n);
+void copy_trans_matrix_to_device(glm::mat4 **mat, glm::mat4 **d_mat, int n);
+void copy_trans_matrix_to_host(glm::mat4 **mat, glm::mat4 **d_mat, int n);
+void copy_boid_structure_to_host(Boid **boids, Boid **d_pointer, int n);
+
 #endif

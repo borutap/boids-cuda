@@ -13,9 +13,6 @@
 
 #include <iostream>
 
-#include <chrono>
-#include <thread>
-
 #include "boids_common.h"
 #include "boids_gpu.h"
 #include "boids_cpu.h"
@@ -27,8 +24,8 @@ using namespace std;
 // settings
 const unsigned int SCR_WIDTH = 1200;
 const unsigned int SCR_HEIGHT = 900;
-const int N = 8000;
-const bool runLogger = false;
+const int N = 10000;
+const bool runLogger = true;
 const bool RUN_CPU = false;
 
 // public
@@ -38,6 +35,7 @@ glm::vec2 *start_translations;
 glm::mat4 *trans_matrices;
 Boid *d_boids;
 glm::mat4 *d_trans;
+Logger *l = nullptr;    
 
 // set up vertex data and configure vertex attributes
 float vertexData[] = {
@@ -61,7 +59,11 @@ Shader* init_resources()
     Shader* shader = new Shader("boids.vs", "boids.fs");
     trans_matrices = new glm::mat4[N];
     start_translations = new glm::vec2[N];
-       
+    if (runLogger)
+    {
+        l = new Logger();   
+        l->start_timed_measurement("generating starting translations");
+    }
     for (int i = 0; i < N; i++)
     {                
         glm::vec3 translation;
@@ -70,6 +72,8 @@ Shader* init_resources()
         trans_matrices[i] = glm::translate(glm::mat4(1.0f), translation);
         start_translations[i] = translation;
     }
+    if (runLogger)
+        l->end_timed_measurement();
     
     glGenVertexArrays(1, &triangleVAO);
     glGenBuffers(1, &triangleVBO);
@@ -100,10 +104,7 @@ void init_transform_resources()
     glGenBuffers(1, &transformationVBO);
     glBindBuffer(GL_ARRAY_BUFFER, transformationVBO);
     glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrices[0], GL_DYNAMIC_DRAW);
-    // glBindBuffer(GL_ARRAY_BUFFER, 0);
-    // rejestracja jako zasob cuda
-    // CudaGraphicsGLRegisterBuffer()
-    
+
     glBindVertexArray(triangleVAO);
     // set attribute pointers for matrix (4 times vec4)
     glEnableVertexAttribArray(3);
@@ -123,15 +124,6 @@ void init_transform_resources()
     glBindVertexArray(0);
 }
 
-void print_debug(Boid &boid)
-{
-    cout << "boid.x = " << boid.x << endl;
-    cout << "boid.y = " << boid.y << endl;
-    cout << "boid.dx = " << boid.dx << endl;
-    cout << "boid.dy = " << boid.dy << endl;
-    return;
-}
-
 void set_initial_boid_position(Boid &boid, float *vertexData, glm::vec2 &translation)
 {
     float origin_x = 0.0f;
@@ -142,6 +134,8 @@ void set_initial_boid_position(Boid &boid, float *vertexData, glm::vec2 &transla
 
 Boid *init_boid_structure(int n, float *vertexData, glm::vec2 *start_translations)
 {
+    if (runLogger)
+        l->start_timed_measurement("setting boid structures");
     Boid *boids = new Boid[n];
     for (int i = 0; i < n; i++)
     {
@@ -149,70 +143,39 @@ Boid *init_boid_structure(int n, float *vertexData, glm::vec2 *start_translation
         boids[i].dy = glm::linearRand(-0.5f, 0.5f) / 100;
         set_initial_boid_position(boids[i], vertexData, start_translations[i]);        
     }
+    if (runLogger)
+        l->end_timed_measurement();
     return boids;
-}
-
-void copy_boid_structure_to_device(Boid **boids, Boid **d_pointer, int n)
-{
-    size_t size = sizeof(Boid);
-    cudaMalloc(d_pointer, n * size);
-    cudaMemcpy(*d_pointer, *boids, n * size, cudaMemcpyHostToDevice);
-}
-
-void copy_trans_matrix_to_device(glm::mat4 **mat, glm::mat4 **d_mat, int n)
-{
-    size_t size = sizeof(glm::mat4);
-    cudaMalloc(d_mat, n * size);
-    cudaMemcpy(*d_mat, *mat, n * size, cudaMemcpyHostToDevice);
-}
-
-void copy_trans_matrix_to_host(glm::mat4 **mat, glm::mat4 **d_mat, int n)
-{
-    cudaMemcpy(*mat, *d_mat, n *  sizeof(glm::mat4), cudaMemcpyDeviceToHost);
-}
-
-void copy_boid_structure_to_host(Boid **boids, Boid **d_pointer, int n)
-{   
-    cudaMemcpy(*boids, *d_pointer, n *  sizeof(Boid), cudaMemcpyDeviceToHost);
 }
 
 void main_loop(SDL_Window* window, Shader* shader)
 {
     Boid *boids = init_boid_structure(N, vertexData, start_translations);    
-    for (int i = 0; i < N; i++)
-    {
-        cout << i << ": " << boids[i].x << ", " << boids[i].y << endl;
-    }
-    Logger l;
-    if (runLogger)
-    {
-        l = Logger();   
-    }
+    
     if (!RUN_CPU)
     {
         if (runLogger)
         {
-            l.start_timed_measurement("copy boid to device");
+            l->start_timed_measurement("copying boid structures to device");
         }
         copy_boid_structure_to_device(&boids, &d_boids, N);
         if (runLogger)
         {
-            l.end_timed_measurement();
-            l.start_timed_measurement("copy trans to device");
+            l->end_timed_measurement();
+            l->start_timed_measurement("copying transformation matrices to device");
         }        
         copy_trans_matrix_to_device(&trans_matrices, &d_trans, N);
         if (runLogger)
         {
-            l.end_timed_measurement();
-            l.close_file();
+            l->end_timed_measurement();            
         }           
     }
+
     dim3 num_threads(1024);
     dim3 num_blocks(N / 1024 + 1);
     Parameters p;
     p.set_default();
-    p.print_values();
-       
+    p.print_values();       
     while (true)
     {
         Uint32 frame_start = SDL_GetTicks();
@@ -221,11 +184,22 @@ void main_loop(SDL_Window* window, Shader* shader)
 		while (SDL_PollEvent(&ev))
         {
 			if (ev.type == SDL_QUIT)
-				return;
+            {
+                if (l != nullptr)
+                {                    
+                    l->start_timed_measurement("copying transformation matrices to host");
+                    copy_trans_matrix_to_host(&trans_matrices, &d_trans, N);
+                    l->end_timed_measurement();                    
+                } 
+                return;
+            }				
             if (ev.type == SDL_KEYDOWN && p.handle_keyboard(ev))
             {   
                 p.print_values();
-                cout << "Last frametime = " << frame_time << "ms" << endl;                    
+                // przy wylaczonym v-sync moze byc 0
+                frame_time = frame_time == 0 ? 1 : frame_time;
+                cout << "Last frametime = " << frame_time << "ms ("
+                     << 1000/frame_time << " FPS)" << endl;                    
             }
             if (ev.type == SDL_WINDOWEVENT &&
                 ev.window.event == SDL_WINDOWEVENT_RESIZED)
@@ -252,10 +226,6 @@ void main_loop(SDL_Window* window, Shader* shader)
         glBindBuffer(GL_ARRAY_BUFFER, 0); 
 		render(window, shader);
         frame_time = SDL_GetTicks() - frame_start;
-
-        // std::chrono::milliseconds timespan(20); // or whatever
-        // std::this_thread::sleep_for(timespan);
-        // cout << frame_time << endl;
 	}
 }
 
@@ -285,6 +255,11 @@ void free_resources(SDL_Window* window, Shader *shader)
     cudaFree(d_trans);
     cudaFree(d_boids);
 
+    if (runLogger)
+    {
+        l->close_file();
+        delete l;
+    }
     SDL_DestroyWindow(window);
     //Quit SDL subsystems
     SDL_Quit();
@@ -319,7 +294,7 @@ int main()
     //SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
     //SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 1);
-    // SDL_GL_SetSwapInterval(0); // wylacza vsync
+    //SDL_GL_SetSwapInterval(0); // wylacza vsync
     if (SDL_GL_CreateContext(window) == NULL)
     {
         cerr << "Error: SDL_GL_CreateContext: " << SDL_GetError() << endl;
