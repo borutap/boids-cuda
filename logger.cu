@@ -36,7 +36,6 @@ void Logger::end_timed_measurement()
 
 void Logger::close_file()
 {
-    auto start = std::chrono::system_clock::now();
     file_handle.close();
 }
 

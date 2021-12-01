@@ -27,7 +27,8 @@ using namespace std;
 // settings
 const unsigned int SCR_WIDTH = 1200;
 const unsigned int SCR_HEIGHT = 900;
-const int N = 1000;
+const int N = 8000;
+const bool runLogger = false;
 const bool RUN_CPU = false;
 
 // public
@@ -182,16 +183,29 @@ void main_loop(SDL_Window* window, Shader* shader)
     {
         cout << i << ": " << boids[i].x << ", " << boids[i].y << endl;
     }
-    Logger l = Logger(); 
+    Logger l;
+    if (runLogger)
+    {
+        l = Logger();   
+    }
     if (!RUN_CPU)
     {
-        l.start_timed_measurement("copy boid to device");
+        if (runLogger)
+        {
+            l.start_timed_measurement("copy boid to device");
+        }
         copy_boid_structure_to_device(&boids, &d_boids, N);
-        l.end_timed_measurement();
-        l.start_timed_measurement("copy trans to device");
+        if (runLogger)
+        {
+            l.end_timed_measurement();
+            l.start_timed_measurement("copy trans to device");
+        }        
         copy_trans_matrix_to_device(&trans_matrices, &d_trans, N);
-        l.end_timed_measurement();
-        l.close_file();
+        if (runLogger)
+        {
+            l.end_timed_measurement();
+            l.close_file();
+        }           
     }
     dim3 num_threads(1024);
     dim3 num_blocks(N / 1024 + 1);
