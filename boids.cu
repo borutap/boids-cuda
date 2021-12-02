@@ -24,7 +24,7 @@ using namespace std;
 // settings
 const unsigned int SCR_WIDTH = 1200;
 const unsigned int SCR_HEIGHT = 900;
-const int N = 10000;
+const int N = 700;
 const bool runLogger = true;
 const bool RUN_CPU = false;
 
@@ -180,10 +180,10 @@ void main_loop(SDL_Window* window, Shader* shader)
     {
         Uint32 frame_start = SDL_GetTicks();
         int frame_time;
-		SDL_Event ev;
-		while (SDL_PollEvent(&ev))
+        SDL_Event ev;
+        while (SDL_PollEvent(&ev))
         {
-			if (ev.type == SDL_QUIT)
+            if (ev.type == SDL_QUIT)
             {
                 if (l != nullptr)
                 {                    
