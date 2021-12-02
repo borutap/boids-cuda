@@ -9,7 +9,8 @@ namespace cpu
                   float centering_factor, float visual_range,
                   float margin, float turn_factor,
                   float speed_limit, float min_distance,
-                  float avoid_factor, float matching_factor);
+                  float avoid_factor, float matching_factor,
+                  float mouseX, float mouseY);
     void fly_towards_center(Boid *boids, int index, int n,
                             float centering_factor,
                             float visual_range);
@@ -18,6 +19,8 @@ namespace cpu
     void limit_speed(Boid *boids, int index, float speed_limit);
     void avoid_others(Boid *boids, int index, int n,
                       float min_distance, float avoid_factor);
+    void avoid_mouse(Boid *boids, int index, float mouseX,
+                     float mouseY);
     void match_velocity(Boid *boids, int index, int n,
                         float matching_factor,
                         float visual_range);

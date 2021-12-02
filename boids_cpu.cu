@@ -7,7 +7,8 @@ void cpu::cpu_test(Boid *boids, glm::mat4 *trans, int n,
                    float centering_factor, float visual_range,
                    float margin, float turn_factor,
                    float speed_limit, float min_distance,
-                   float avoid_factor, float matching_factor)
+                   float avoid_factor, float matching_factor,
+                   float mouseX, float mouseY)
 {
     for (int index = 0; index < n; index++)
     {
@@ -16,6 +17,8 @@ void cpu::cpu_test(Boid *boids, glm::mat4 *trans, int n,
         avoid_others(boids, index, n, min_distance, avoid_factor);
                 
         match_velocity(boids, index, n, matching_factor, visual_range);
+        if (mouseX != -2)
+            avoid_mouse(boids, index, mouseX, mouseY);
         limit_speed(boids, index, speed_limit);
         keep_within_bounds(boids, index, margin, turn_factor);    
         Boid &boid = boids[index];
@@ -126,6 +129,24 @@ void cpu::avoid_others(Boid *boids, int index, int n,
     
     boid.dx += moveX * avoid_factor;
     boid.dy += moveY * avoid_factor;
+}
+
+void cpu::avoid_mouse(Boid *boids, int index, float mouseX, float mouseY)
+{
+    Boid &boid = boids[index];
+    // min_distance = The distance to stay away from other boids
+    // avoid_factor = Adjust velocity by this %
+    // na razie na stale
+    float min_distance = 0.07;
+    float avoid_factor = 0.5;    
+
+    if (glm::sqrt(
+            (boid.x - mouseX) * (boid.x - mouseX) +
+            (boid.y - mouseY) * (boid.y - mouseY)) < min_distance)
+    {
+        boid.dx += boid.x - mouseX * avoid_factor;
+        boid.dy += boid.y - mouseY * avoid_factor;        
+    }        
 }
 
 void cpu::match_velocity(Boid *boids, int index, int n,

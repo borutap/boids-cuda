@@ -14,6 +14,7 @@ public:
     float min_distance; 
     float avoid_factor; 
     float matching_factor;
+    bool avoid_mouse;
 
     void set_default();
     void print_values();

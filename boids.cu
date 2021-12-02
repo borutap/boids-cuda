@@ -22,10 +22,10 @@
 using namespace std;
 
 // settings
-const unsigned int SCR_WIDTH = 1200;
-const unsigned int SCR_HEIGHT = 900;
-const int N = 700;
-const bool runLogger = true;
+unsigned int SCR_WIDTH = 1200;
+unsigned int SCR_HEIGHT = 900;
+const int N = 1000;
+const bool runLogger = false;
 const bool RUN_CPU = false;
 
 // public
@@ -148,6 +148,23 @@ Boid *init_boid_structure(int n, float *vertexData, glm::vec2 *start_translation
     return boids;
 }
 
+void mouse_logic(int &x, int &y, float &rel_x, float &rel_y)
+{
+    SDL_GetMouseState(&x, &y);
+    // mysz poza oknem
+    if (x == 0 || y == 0 || SCR_WIDTH - x < 10 || SCR_HEIGHT - y < 10)
+    {
+        rel_x = -2;
+        rel_y = -2;
+    }
+    else
+    {
+        // konwersja na wspolrzedne OpenGL
+        rel_x = (float)x / SCR_WIDTH * 2 - 1;
+        rel_y = (1 - (float)y / SCR_HEIGHT) * 2 - 1;      
+    }
+}
+
 void main_loop(SDL_Window* window, Shader* shader)
 {
     Boid *boids = init_boid_structure(N, vertexData, start_translations);    
@@ -173,14 +190,20 @@ void main_loop(SDL_Window* window, Shader* shader)
 
     dim3 num_threads(1024);
     dim3 num_blocks(N / 1024 + 1);
+
     Parameters p;
     p.set_default();
-    p.print_values();       
+    p.print_values();     
+
+    int x, y;
+    float rel_x, rel_y; 
+    char title[50];
     while (true)
     {
         Uint32 frame_start = SDL_GetTicks();
         int frame_time;
         SDL_Event ev;
+        
         while (SDL_PollEvent(&ev))
         {
             if (ev.type == SDL_QUIT)
@@ -197,27 +220,37 @@ void main_loop(SDL_Window* window, Shader* shader)
             {   
                 p.print_values();
                 // przy wylaczonym v-sync moze byc 0
-                frame_time = frame_time == 0 ? 1 : frame_time;
-                cout << "Last frametime = " << frame_time << "ms ("
-                     << 1000/frame_time << " FPS)" << endl;                    
+                // frame_time = frame_time == 0 ? 1 : frame_time;
+                // cout << "Last frametime = " << frame_time << "ms ("
+                //      << 1000/frame_time << " FPS)" << endl;                    
             }
             if (ev.type == SDL_WINDOWEVENT &&
                 ev.window.event == SDL_WINDOWEVENT_RESIZED)
             {
-                glViewport(0, 0, ev.window.data1, ev.window.data2);
+                SCR_WIDTH = ev.window.data1;
+                SCR_HEIGHT = ev.window.data2;
+                glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
             }
 		}
+        
+        if (p.avoid_mouse)
+            mouse_logic(x, y, rel_x, rel_y);
+        else
+            rel_x = -2;
+        
         if (RUN_CPU)
         {
             cpu::cpu_test(boids, trans_matrices, N,
                 p.centering_factor, p.visual_range, p.margin, p.turn_factor,
-                p.speed_limit, p.min_distance, p.avoid_factor, p.matching_factor);
+                p.speed_limit, p.min_distance, p.avoid_factor, p.matching_factor,
+                rel_x, rel_y);
         }
         else
         {
             kernel_test<<<num_blocks, num_threads>>>(d_boids, d_trans, N,
                 p.centering_factor, p.visual_range, p.margin, p.turn_factor,
-                p.speed_limit, p.min_distance, p.avoid_factor, p.matching_factor);
+                p.speed_limit, p.min_distance, p.avoid_factor, p.matching_factor,
+                rel_x, rel_y);
             copy_trans_matrix_to_host(&trans_matrices, &d_trans, N);
         }
         glBindBuffer(GL_ARRAY_BUFFER, transformationVBO);
@@ -226,6 +259,11 @@ void main_loop(SDL_Window* window, Shader* shader)
         glBindBuffer(GL_ARRAY_BUFFER, 0); 
 		render(window, shader);
         frame_time = SDL_GetTicks() - frame_start;
+
+        // przy wylaczonym v-sync moze byc 0
+        frame_time = frame_time == 0 ? 1 : frame_time;
+        snprintf(title, 50, "Boids (%.2f FPS)", 1000.0/frame_time);
+        SDL_SetWindowTitle(window, title);
 	}
 }
 

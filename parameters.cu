@@ -13,6 +13,7 @@ void Parameters::set_default()
     min_distance = 0.014f;
     avoid_factor = 0.05f; 
     matching_factor = 0.05f;
+    avoid_mouse = false;
 }
 
 void Parameters::print_values()
@@ -34,7 +35,12 @@ void Parameters::print_values()
         << " (-t +y)" << endl;
     cout << "(Match velocity)     Matching factor                  = " << matching_factor
         << " (-g +h)" << endl;
-    cout << "Set defaults (p)" << endl;
+    cout << "Set defaults (p)   Avoid mouse (m): ";
+    if (avoid_mouse)
+        cout << "YES";
+    else
+        cout << "NO";
+    cout << endl;
 }
 
 bool Parameters::handle_keyboard(SDL_Event &ev)
@@ -103,6 +109,10 @@ bool Parameters::handle_keyboard(SDL_Event &ev)
 
         case SDLK_h:
             matching_factor += 0.01f;
+        break; 
+
+        case SDLK_m:
+            avoid_mouse = !avoid_mouse;
         break; 
 
         case SDLK_p:
