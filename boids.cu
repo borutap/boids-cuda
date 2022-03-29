@@ -6,14 +6,14 @@
 
 #include "learnopengl/shader.h"
 
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/random.hpp>
+#include "glm/glm.hpp"
+#include "glm/gtc/matrix_transform.hpp"
+#include "glm/gtc/type_ptr.hpp"
+#include "glm/gtc/random.hpp"
 
 #include <iostream>
 
-#include "boids_common.h"
+#include "boid.h"
 #include "boids_gpu.h"
 #include "boids_cpu.h"
 #include "parameters.h"
@@ -24,7 +24,7 @@ using namespace std;
 // settings
 unsigned int SCR_WIDTH = 1200;
 unsigned int SCR_HEIGHT = 900;
-const int N = 1000;
+const int N = 4000;
 const bool runLogger = false;
 const bool RUN_CPU = false;
 
@@ -80,15 +80,15 @@ Shader* init_resources()
     glBindVertexArray(triangleVAO);
     glBindBuffer(GL_ARRAY_BUFFER, triangleVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertexData), vertexData, GL_STATIC_DRAW);
-    // wspolne dane
+    // shared data
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(
-        0,                  // nr atrybutu - zgodny z layoutem w .vs
-        2,                  // rozmiar
-        GL_FLOAT,           // typ
-        GL_FALSE,           // czy znormalizowane
-        5 * sizeof(float),  // stride - odstep do kolejnej wartosci
-        (void*)0            // offset jezeli jest we wspolnej tablicy
+        0,                  // attribute number - corresponding to layout in .vs
+        2,                  // size
+        GL_FLOAT,           // type
+        GL_FALSE,           // is normalized
+        5 * sizeof(float),  // stride
+        (void*)0            // offset
     );
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(2 * sizeof(float)));
@@ -100,7 +100,7 @@ Shader* init_resources()
 
 void init_transform_resources()
 {    
-    // kazdy trojkat ma swoja macierz transformacji
+    // each triangle has its own transformation matrix
     glGenBuffers(1, &transformationVBO);
     glBindBuffer(GL_ARRAY_BUFFER, transformationVBO);
     glBufferData(GL_ARRAY_BUFFER, N * sizeof(glm::mat4), &trans_matrices[0], GL_DYNAMIC_DRAW);
@@ -151,7 +151,7 @@ Boid *init_boid_structure(int n, float *vertexData, glm::vec2 *start_translation
 void mouse_logic(int &x, int &y, float &rel_x, float &rel_y)
 {
     SDL_GetMouseState(&x, &y);
-    // mysz poza oknem
+    // mouse outside the window
     if (x == 0 || y == 0 || SCR_WIDTH - x < 10 || SCR_HEIGHT - y < 10)
     {
         rel_x = -2;
@@ -159,7 +159,7 @@ void mouse_logic(int &x, int &y, float &rel_x, float &rel_y)
     }
     else
     {
-        // konwersja na wspolrzedne OpenGL
+        // conversion to OpenGL coordinates
         rel_x = (float)x / SCR_WIDTH * 2 - 1;
         rel_y = (1 - (float)y / SCR_HEIGHT) * 2 - 1;      
     }
@@ -218,11 +218,7 @@ void main_loop(SDL_Window* window, Shader* shader)
             }				
             if (ev.type == SDL_KEYDOWN && p.handle_keyboard(ev))
             {   
-                p.print_values();
-                // przy wylaczonym v-sync moze byc 0
-                // frame_time = frame_time == 0 ? 1 : frame_time;
-                // cout << "Last frametime = " << frame_time << "ms ("
-                //      << 1000/frame_time << " FPS)" << endl;                    
+                p.print_values();                  
             }
             if (ev.type == SDL_WINDOWEVENT &&
                 ev.window.event == SDL_WINDOWEVENT_RESIZED)
@@ -260,7 +256,7 @@ void main_loop(SDL_Window* window, Shader* shader)
 		render(window, shader);
         frame_time = SDL_GetTicks() - frame_start;
 
-        // przy wylaczonym v-sync moze byc 0
+        // could be 0 with v-sync turned off
         frame_time = frame_time == 0 ? 1 : frame_time;
         snprintf(title, 50, "Boids (%.2f FPS)", 1000.0/frame_time);
         SDL_SetWindowTitle(window, title);
@@ -277,7 +273,7 @@ void render(SDL_Window* window, Shader* shader)
     (*shader).use();
     glBindVertexArray(triangleVAO);
     glDrawArraysInstanced(GL_TRIANGLES, 0, 3, N); // N triangles of 3 vertices each
-    glBindVertexArray(0); // zrywa binding
+    glBindVertexArray(0);
 
     SDL_GL_SwapWindow(window);
 }
@@ -332,7 +328,7 @@ int main()
     //SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
     //SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 1);
-    //SDL_GL_SetSwapInterval(0); // wylacza vsync
+    //SDL_GL_SetSwapInterval(0); // disables v-sync
     if (SDL_GL_CreateContext(window) == NULL)
     {
         cerr << "Error: SDL_GL_CreateContext: " << SDL_GetError() << endl;

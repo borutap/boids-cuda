@@ -1,4 +1,4 @@
-kernel
 boids
+.vscode
 *.o
 *.csv
