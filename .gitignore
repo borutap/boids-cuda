@@ -1,2 +1,4 @@
 boids
-testt
+.vscode
+*.o
+*.csv
